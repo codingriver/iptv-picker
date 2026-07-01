@@ -1,0 +1,61 @@
+{
+  "name": "iptv-picker-cli",
+  "version": "2.0.0",
+  "private": true,
+  "description": "基于 iptv-checker 与 m3u-linter 的 IPTV 直播源命令行质量检测工具。",
+  "type": "commonjs",
+  "bin": {
+    "iptv-picker": "dist/iptv-picker-cli.js",
+    "iptv-picker-tvbox-extract": "dist/iptv-picker-tvbox-extract-cli.js",
+    "iptv-picker-source-sync": "dist/iptv-picker-source-sync-cli.js"
+  },
+  "scripts": {
+    "setup": "npm install && npm run build",
+    "build": "node scripts/build.js",
+    "build:node": "node scripts/build.js",
+    "picker": "node dist/iptv-picker-cli.js",
+    "picker:hd": "node dist/iptv-picker-cli.js --st hd",
+    "picker:hd:run": "node scripts/run-iptv-picker.js --st hd",
+    "picker:fast:cn": "node dist/iptv-picker-cli.js --st fast --preset cn",
+    "picker:fast:cn:run": "node scripts/run-iptv-picker.js --st fast --preset cn",
+    "picker:fast:cn:debug": "node dist/iptv-picker-cli.js --st fast --preset cn --debug",
+    "picker:fast:cn:debug:run": "node scripts/run-iptv-picker.js --st fast --preset cn --debug",
+    "picker:fast:cn-full": "node dist/iptv-picker-cli.js --st fast --preset cn-full",
+    "picker:fast:cn-full:run": "node scripts/run-iptv-picker.js --st fast --preset cn-full",
+    "picker:fast:cn-full:debug": "node dist/iptv-picker-cli.js --st fast --preset cn-full --debug",
+    "picker:fast:cn-full:debug:run": "node scripts/run-iptv-picker.js --st fast --preset cn-full --debug",
+    "picker:fast:cn-plus": "node dist/iptv-picker-cli.js --st fast --preset cn-plus",
+    "picker:fast:cn-plus:run": "node scripts/run-iptv-picker.js --st fast --preset cn-plus",
+    "picker:fast:cn-plus:debug": "node dist/iptv-picker-cli.js --st fast --preset cn-plus --debug",
+    "picker:fast:cn-plus:debug:run": "node scripts/run-iptv-picker.js --st fast --preset cn-plus --debug",
+    "picker:interactive": "node dist/iptv-picker-cli.js --interactive --input data/source.json --out data/res.json",
+    "picker:interactive:run": "node scripts/run-iptv-picker.js --interactive --input data/source.json --out data/res.json",
+    "picker:init": "node dist/iptv-picker-cli.js --init-default-sources",
+    "picker:strategy:init": "node dist/iptv-picker-cli.js --init-default-strategies",
+    "picker:strategy:list": "node dist/iptv-picker-cli.js --list-strategies",
+    "picker:source:sync": "node dist/iptv-picker-source-sync-cli.js",
+    "picker:source:init": "node dist/iptv-picker-source-sync-cli.js --init",
+    "picker:tvbox:extract": "node dist/iptv-picker-tvbox-extract-cli.js",
+    "picker:tvbox:init": "node dist/iptv-picker-tvbox-extract-cli.js --init-default-configs",
+    "test": "npm run test:channel-curation && npm run test:picker",
+    "test:channel-curation": "node scripts/build.js && node scripts/channel-curation-regression.js",
+    "test:picker": "node scripts/iptv-picker-acceptance.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.5.2",
+    "iptv-checker": "^0.30.3",
+    "m3u-linter": "^0.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "playwright-core": "^1.60.0",
+    "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codingriver/iptv-picker.git"
+  },
+  "license": "ISC"
+}
