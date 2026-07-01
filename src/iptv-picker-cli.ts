@@ -3,11 +3,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, extname, resolve } from 'path';
 import {
-  confirm,
-  input as promptInput,
-  select,
-} from '@inquirer/prompts';
-import {
   buildIptvPickerCoreReportFromEntries,
   checkIptvPickerCoreSources,
   DEFAULT_CHECK_MODE,
@@ -37,6 +32,34 @@ import type {
   IptvPickerCoreReport,
   IptvPickerCoreSourceSummary,
 } from './core/types';
+
+interface InquirerPrompts {
+  input(options: {
+    message: string;
+    default?: string;
+    validate?: (value: string) => boolean | string | Promise<boolean | string>;
+  }): Promise<string>;
+  confirm(options: {
+    message: string;
+    default: boolean;
+  }): Promise<boolean>;
+  select<T extends string>(options: {
+    message: string;
+    choices: Array<{
+      name: string;
+      value: T;
+      description: string;
+    }>;
+    default: T;
+  }): Promise<T>;
+}
+
+let inquirerPromptsPromise: Promise<InquirerPrompts> | undefined;
+
+function loadInquirerPrompts(): Promise<InquirerPrompts> {
+  inquirerPromptsPromise ??= import('@inquirer/prompts') as Promise<InquirerPrompts>;
+  return inquirerPromptsPromise;
+}
 
 interface CliArgs {
   url?: string;
@@ -1724,6 +1747,7 @@ async function promptRequired(
   label: string,
   defaultValue?: string,
 ): Promise<string> {
+  const { input: promptInput } = await loadInquirerPrompts();
   return promptInput({
     message: label,
     default: defaultValue,
@@ -1735,6 +1759,7 @@ async function promptOptional(
   label: string,
   defaultValue?: string,
 ): Promise<string> {
+  const { input: promptInput } = await loadInquirerPrompts();
   return promptInput({
     message: label,
     default: defaultValue,
@@ -1745,6 +1770,7 @@ async function promptOptionalNumber(
   label: string,
   defaultValue?: number,
 ): Promise<number | undefined> {
+  const { input: promptInput } = await loadInquirerPrompts();
   const raw = await promptInput({
     message: label,
     default: defaultValue == null ? undefined : String(defaultValue),
@@ -1763,6 +1789,7 @@ async function promptInteger(
   defaultValue: number,
   minValue: number,
 ): Promise<number> {
+  const { input: promptInput } = await loadInquirerPrompts();
   const raw = await promptInput({
     message: label,
     default: String(defaultValue),
@@ -1778,6 +1805,7 @@ async function promptYesNo(
   label: string,
   defaultValue: boolean,
 ): Promise<boolean> {
+  const { confirm } = await loadInquirerPrompts();
   return confirm({
     message: label,
     default: defaultValue,
@@ -1789,6 +1817,7 @@ async function promptChoice<T extends string>(
   choices: Array<[T, string]>,
   defaultValue: T,
 ): Promise<T> {
+  const { select } = await loadInquirerPrompts();
   return select({
     message: label,
     choices: choices.map(([value, description]) => ({
