@@ -1,0 +1,22 @@
+{
+  "_comment": "通用配置文件。GitHub 访问较慢或不稳定时，可通过 githubAcceleratorMode 控制是否使用加速，并在 githubAccelerators 数组中维护加速前缀；数组顺序就是尝试顺序。",
+  "_schemaNotes": {
+    "githubAcceleratorMode": "GitHub 加速模式：enabled/启用=先访问原始 GitHub，失败后按数组尝试加速；disabled/禁用=只访问原始 GitHub；forced/强制启用=默认直接使用加速，不再尝试 GitHub 原始链接。",
+    "githubAccelerators": "GitHub 加速前缀数组。程序会按 prefix + 原始 URL 的形式生成加速链接；也会用这些前缀识别并还原已加速的 GitHub raw 链接。"
+  },
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-02T00:00:00+08:00",
+  "purpose": "Common runtime configuration shared by IPTV Picker commands.",
+  "githubAcceleratorMode": "enabled",
+  "githubAccelerators": [
+    "https://gh-proxy.org/",
+    "https://mirror.ghproxy.com/",
+    "https://github.moeyy.xyz/",
+    "https://ghp.ci/",
+    "https://gh.llkk.cc/",
+    "https://gh.aptv.app/",    
+    "https://gh.927223.xyz/",
+    "https://gh.halonice.com/",
+    "https://ghfile.geekertao.top/"
+  ]
+}

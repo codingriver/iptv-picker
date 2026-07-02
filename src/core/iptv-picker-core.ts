@@ -13,7 +13,7 @@ import type {
   IptvPickerCoreStatus,
   ChannelCurationPreset,
 } from './types';
-import { TVBOX_UA } from './config';
+import { githubRequestUrls, TVBOX_UA } from './config';
 import { createChannelNameMatcher } from './channel-curation';
 
 export interface IptvPickerCoreInputSource {
@@ -768,50 +768,72 @@ async function downloadSource(
       fromInline: true,
     };
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.downloadTimeoutMs);
-  try {
-    const response = await fetch(source.url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': TVBOX_UA },
-    });
-    if (!response.ok) {
-      return {
+  let lastFailure: DownloadSourceResult | undefined;
+  for (const requestUrl of githubRequestUrls(source.url)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.downloadTimeoutMs);
+    try {
+      const response = await fetch(requestUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': TVBOX_UA },
+      });
+      if (!response.ok) {
+        lastFailure = {
+          ok: false,
+          content: null,
+          bytes: 0,
+          status: response.status,
+          error: `HTTP ${response.status}`,
+          durationMs: Date.now() - startedMs,
+          fromInline: false,
+        };
+        continue;
+      }
+      const text = await response.text();
+      const ok = !!text && text.length > 20;
+      if (ok) {
+        return {
+          ok,
+          content: text,
+          bytes: Buffer.byteLength(text || '', 'utf8'),
+          status: response.status,
+          durationMs: Date.now() - startedMs,
+          fromInline: false,
+        };
+      }
+      lastFailure = {
         ok: false,
         content: null,
-        bytes: 0,
+        bytes: Buffer.byteLength(text || '', 'utf8'),
         status: response.status,
-        error: `HTTP ${response.status}`,
+        error: 'Downloaded content is empty or too short',
         durationMs: Date.now() - startedMs,
         fromInline: false,
       };
+    } catch (error) {
+      const isTimeout = error instanceof Error && (error.name === 'AbortError' || /abort|timeout/i.test(error.message));
+      lastFailure = {
+        ok: false,
+        content: null,
+        bytes: 0,
+        error: isTimeout
+          ? `Download timed out after ${options.downloadTimeoutMs} ms`
+          : error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedMs,
+        fromInline: false,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const text = await response.text();
-    const ok = !!text && text.length > 20;
-    return {
-      ok,
-      content: ok ? text : null,
-      bytes: Buffer.byteLength(text || '', 'utf8'),
-      status: response.status,
-      error: ok ? undefined : 'Downloaded content is empty or too short',
-      durationMs: Date.now() - startedMs,
-      fromInline: false,
-    };
-  } catch (error) {
-    const isTimeout = error instanceof Error && (error.name === 'AbortError' || /abort|timeout/i.test(error.message));
-    return {
-      ok: false,
-      content: null,
-      bytes: 0,
-      error: isTimeout
-        ? `Download timed out after ${options.downloadTimeoutMs} ms`
-        : error instanceof Error ? error.message : String(error),
-      durationMs: Date.now() - startedMs,
-      fromInline: false,
-    };
-  } finally {
-    clearTimeout(timer);
   }
+  return lastFailure || {
+    ok: false,
+    content: null,
+    bytes: 0,
+    error: 'Download failed',
+    durationMs: Date.now() - startedMs,
+    fromInline: false,
+  };
 }
 
 async function lintM3u(content: string): Promise<number> {

@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
+import { githubRequestUrls, unwrapGithubAcceleratedUrl } from './core/config';
 import { extractTvboxLiveSources, isLikelyLivePlaylistUrl } from './core/tvbox-live-extract';
 
 type CatalogType = 'html_links' | 'text_links' | 'github_tree' | 'static_links' | 'embedded_m3u_pages' | 'tvbox_config_links' | 'generated_token_links';
@@ -479,20 +480,7 @@ function unwrapKnownUrl(value: string): string {
   let url = cleanExtractedUrl(value);
   const addPrefix = 'https://add.aptv.app/';
   if (url.startsWith(addPrefix)) url = url.slice(addPrefix.length);
-
-  const proxyPrefixes = [
-    'https://gh.aptv.app/',
-    'https://gh-proxy.org/',
-    'https://gh.llkk.cc/',
-    'https://mirror.ghproxy.com/',
-    'https://github.moeyy.xyz/',
-  ];
-  for (const prefix of proxyPrefixes) {
-    if (url.startsWith(`${prefix}https://raw.githubusercontent.com/`)) {
-      return url.slice(prefix.length);
-    }
-  }
-  return url;
+  return unwrapGithubAcceleratedUrl(url);
 }
 
 function extractTextLinks(text: string, baseUrl: string): RawDiscoveredLink[] {
@@ -792,24 +780,27 @@ async function fetchGithubText(apiUrl: string, catalog: SourceCatalogConfig, con
 
   let lastResponse: Response | undefined;
   let lastText = '';
+  const requestUrls = githubRequestUrls(apiUrl);
   for (let attempt = 0; attempt <= retry; attempt++) {
-    if (requestDelayMs > 0) await sleep(requestDelayMs);
+    for (const requestUrl of requestUrls) {
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
 
-    const headers: Record<string, string> = {
-      'user-agent': 'Mozilla/5.0 iptv-picker-source-sync',
-      accept: 'application/vnd.github+json',
-    };
-    if (token) headers.authorization = `Bearer ${token}`;
+      const headers: Record<string, string> = {
+        'user-agent': 'Mozilla/5.0 iptv-picker-source-sync',
+        accept: 'application/vnd.github+json',
+      };
+      if (token && requestUrl === apiUrl) headers.authorization = `Bearer ${token}`;
 
-    const response = await fetch(apiUrl, { headers });
-    const text = await response.text();
-    lastResponse = response;
-    lastText = text;
+      const response = await fetch(requestUrl, { headers });
+      const text = await response.text();
+      lastResponse = response;
+      lastText = text;
 
-    const retryable = response.status === 403 || response.status === 429 || response.status >= 500;
-    if (!retryable || attempt >= retry) return { status: response.status, text, response };
+      const retryable = response.status === 403 || response.status === 429 || response.status >= 500;
+      if (!retryable || attempt >= retry) return { status: response.status, text, response };
+    }
 
-    await sleep(githubRetryDelayMs(response, retryDelayMs, attempt));
+    if (lastResponse) await sleep(githubRetryDelayMs(lastResponse, retryDelayMs, attempt));
   }
 
   if (!lastResponse) throw new Error('GitHub request did not run.');
@@ -1038,42 +1029,60 @@ function titleFromUrl(prefix: string, url: string, format: 'm3u' | 'diyp_txt', p
 }
 
 async function fetchText(url: string, timeoutMs: number): Promise<{ status: number; text: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync' },
-    });
-    const text = await response.text();
-    return { status: response.status, text };
-  } finally {
-    clearTimeout(timer);
+  let lastError: unknown;
+  let lastResult: { status: number; text: string } | undefined;
+  const requestUrls = githubRequestUrls(url);
+  for (const requestUrl of requestUrls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(requestUrl, {
+        signal: controller.signal,
+        headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync' },
+      });
+      const text = await response.text();
+      if (response.status >= 200 && response.status < 400) return { status: response.status, text };
+      lastResult = { status: response.status, text };
+      if (requestUrls.length === 1) return lastResult;
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  if (lastResult) return lastResult;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Fetch failed'));
 }
 
 async function checkUrl(url: string, timeoutMs: number): Promise<{ ok: boolean; status?: number; error?: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    let response = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
-      headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync' },
-    });
-    if (response.status === 405 || response.status === 403) {
-      response = await fetch(url, {
-        method: 'GET',
+  let lastStatus: number | undefined;
+  let lastError: string | undefined;
+  for (const requestUrl of githubRequestUrls(url)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response = await fetch(requestUrl, {
+        method: 'HEAD',
         signal: controller.signal,
-        headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync', range: 'bytes=0-2047' },
+        headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync' },
       });
+      if (response.status === 405 || response.status === 403) {
+        response = await fetch(requestUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: { 'user-agent': 'Mozilla/5.0 iptv-picker-source-sync', range: 'bytes=0-2047' },
+        });
+      }
+      if (response.status >= 200 && response.status < 400) return { ok: true, status: response.status };
+      lastStatus = response.status;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      clearTimeout(timer);
     }
-    return { ok: response.status >= 200 && response.status < 400, status: response.status };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  } finally {
-    clearTimeout(timer);
   }
+  return { ok: false, status: lastStatus, error: lastError };
 }
 
 async function discoverCatalog(catalog: SourceCatalogConfig, check: boolean, context: RuntimeContext): Promise<{ sources: DiscoveredSource[]; row: CatalogSyncRow }> {

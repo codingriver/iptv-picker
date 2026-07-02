@@ -1,3 +1,5 @@
+import { githubRequestUrls, TVBOX_UA } from './config';
+
 export interface TvboxConfigInputSource {
   name: string;
   url: string;
@@ -174,18 +176,27 @@ function absoluteMaybe(value: string, baseUrl: string): { url: string; relativeR
 
 async function downloadConfig(source: TvboxConfigInputSource): Promise<string> {
   if (source.content && source.content.trim()) return source.content;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
-  try {
-    const response = await fetch(source.url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'okhttp/3.12.0' },
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
-  } finally {
-    clearTimeout(timer);
+  let lastError: unknown;
+  for (const requestUrl of githubRequestUrls(source.url)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(requestUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': TVBOX_UA },
+      });
+      if (!response.ok) {
+        lastError = new Error(`HTTP ${response.status}`);
+        continue;
+      }
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Download failed'));
 }
 
 function normalizeLiveItems(rawLives: unknown): TvboxLiveItem[] {
