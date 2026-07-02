@@ -282,7 +282,7 @@ const STRATEGIES: StrategyDefinition[] = [
   {
     key: 'balanced',
     label: '均衡优选',
-    description: '代码内置兜底策略；完整策略请使用 data/strategy.json 配置。',
+    description: '代码内置兜底策略；完整策略请使用 config/strategy.json 配置。',
     apply: {
       status: 'ok',
       sort: 'default',
@@ -310,13 +310,13 @@ interface SourceLoadResult {
 }
 
 const DEFAULT_INPUT_PATH = resolve('data', 'source.json');
-const DEFAULT_OUTPUT_PATH = 'data/res.json';
-const DEFAULT_LIVE_EXPORT_PATH = 'data/iptv.m3u';
-const DEFAULT_PREFLIGHT_OUTPUT_PATH = 'data/res.preflight.json';
-const DEFAULT_STRATEGY_PATH = resolve('data', 'strategy.json');
-const DEFAULT_CHANNEL_TARGETS_PATH = resolve('data', 'channel-targets.json');
-const DEFAULT_CHANNEL_ALIASES_PATH = resolve('data', 'channel-aliases.json');
-const DEFAULT_LOG_PATH = 'data/res.log';
+const DEFAULT_OUTPUT_PATH = 'res/res.json';
+const DEFAULT_LIVE_EXPORT_PATH = 'res/iptv.m3u';
+const DEFAULT_PREFLIGHT_OUTPUT_PATH = 'res/res.preflight.json';
+const DEFAULT_STRATEGY_PATH = resolve('config', 'strategy.json');
+const DEFAULT_CHANNEL_TARGETS_PATH = resolve('config', 'channel-targets.json');
+const DEFAULT_CHANNEL_ALIASES_PATH = resolve('config', 'channel-aliases.json');
+const DEFAULT_LOG_PATH = 'res/res.log';
 
 let runtimeLogPath: string | undefined;
 let runtimeDebug = false;
@@ -1236,7 +1236,7 @@ function usage(): string {
     `  --resume-preflight [file]   same as --resume, kept for compatibility`,
     '  --top-errors <number>       deprecated; text report output has been removed',
     '  --top-sources <number>      deprecated; text report output has been removed',
-    '  --st, --strategy <name>     strategy key from data/strategy.json; use --list-strategies to view',
+    '  --st, --strategy <name>     strategy key from config/strategy.json; use --list-strategies to view',
     `  --strategy-file <file>      strategy preset file, default: ${DEFAULT_STRATEGY_PATH}`,
     '  --init-default-strategies   create the default strategy file and exit',
     `  --preset, --curation-preset <name> none|cn|cn-full|cn-plus, default: none`,
@@ -1291,7 +1291,7 @@ function usage(): string {
     'Strategy examples:',
     '  node dist/iptv-picker-cli.js --st hd',
     '  node dist/iptv-picker-cli.js --strategy audit',
-    '  node dist/iptv-picker-cli.js --st balanced --input data/source.json --export-live data/iptv.m3u',
+    '  node dist/iptv-picker-cli.js --st balanced --input data/source.json --export-live res/iptv.m3u',
     '',
     'sources.json formats:',
     '  [{"name":"source","url":"https://example.com/live.m3u"}]',
@@ -1299,7 +1299,7 @@ function usage(): string {
     '',
     `default sources file: ${DEFAULT_INPUT_PATH}`,
     '  if the default file does not exist, the CLI will create it with open-source IPTV sources',
-    `default output: ${DEFAULT_OUTPUT_PATH}, report: ${deriveReportPath(DEFAULT_OUTPUT_PATH)}, markdown reports: ${deriveSourceStatsReportPath(DEFAULT_OUTPUT_PATH)}, ${deriveChannelStatsReportPath(DEFAULT_OUTPUT_PATH)}, live exports: data/iptv.m3u, data/iptv.txt, data/iptv.json`,
+    `default output: ${DEFAULT_OUTPUT_PATH}, report: ${deriveReportPath(DEFAULT_OUTPUT_PATH)}, markdown reports: ${deriveSourceStatsReportPath(DEFAULT_OUTPUT_PATH)}, ${deriveChannelStatsReportPath(DEFAULT_OUTPUT_PATH)}, live exports: res/iptv.m3u, res/iptv.txt, res/iptv.json`,
   ].join('\n');
 }
 

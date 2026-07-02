@@ -138,9 +138,9 @@ interface CatalogReportMeta {
 
 const DEFAULT_CONFIG_PATH = 'data/source-catalogs.json';
 const DEFAULT_OUTPUT_PATH = 'data/source.json';
-const DEFAULT_REPORT_PATH = 'data/iptv-picker-source-sync.report.md';
-const DEFAULT_GITHUB_CACHE_PATH = 'data/source-catalog-cache.json';
-const DEFAULT_TOKEN_CACHE_PATH = 'data/source-token-cache.json';
+const DEFAULT_REPORT_PATH = 'res/iptv-picker-source-sync.report.md';
+const DEFAULT_GITHUB_CACHE_PATH = 'data/cache/source-catalog-cache.json';
+const DEFAULT_TOKEN_CACHE_PATH = 'data/cache/source-token-cache.json';
 const DEFAULT_GITHUB_REQUEST_DELAY_MS = 1000;
 const DEFAULT_GITHUB_RETRY = 2;
 const DEFAULT_GITHUB_RETRY_DELAY_MS = 3000;
@@ -249,7 +249,7 @@ function defaultCatalogFile(): CatalogFile {
         repo: 'iptv.cqshushu.com',
         risk: 'medium',
         maxSources: 1,
-        notes: '同步器会优先验证并复用 data/source-token-cache.json 中缓存的 jk=m3u token 链接；缓存失效时重新访问 generateUrl 生成新 token。',
+        notes: '同步器会优先验证并复用 data/cache/source-token-cache.json 中缓存的 jk=m3u token 链接；缓存失效时重新访问 generateUrl 生成新 token。',
       },
     ],
   };

@@ -1,0 +1,577 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-01T00:00:00+08:00",
+  "purpose": "Catalog definitions for discovering public IPTV M3U/TXT source lists and merging them into data/source.json.",
+  "catalogs": [
+    {
+      "key": "ibert",
+      "name": "董大直播源",
+      "enabled": true,
+      "type": "html_links",
+      "homepage": "https://m3u.ibert.me/",
+      "baseUrl": "https://m3u.ibert.me/",
+      "includePatterns": [
+        "\\.m3u$",
+        "\\.txt$"
+      ],
+      "excludePatterns": [
+        "^https?://(?!m3u\\.ibert\\.me/)",
+        "/assets/",
+        "epg",
+        "\\.xml$"
+      ],
+      "preferPatterns": [
+        "/cn",
+        "/o_cn",
+        "/o_s_cn",
+        "/txt/cn",
+        "/txt/o_cn",
+        "/txt/o_s_cn",
+        "/fmml",
+        "/ycl",
+        "/j_iptv"
+      ],
+      "namePrefix": "ibert",
+      "sourceKind": "catalog",
+      "repo": "HerbertHe/iptv-sources",
+      "risk": "medium",
+      "maxSources": 30
+    },
+    {
+      "key": "fanmingming-live",
+      "name": "fanmingming/live 电视清单",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/fanmingming/live/tree/main/tv/m3u",
+      "githubRepo": "fanmingming/live",
+      "githubRef": "main",
+      "githubPaths": [
+        "tv/m3u"
+      ],
+      "includePatterns": [
+        "tv/m3u/(index|ipv6|itv|demo)\\.m3u$"
+      ],
+      "excludePatterns": [
+        "radio/",
+        "adult"
+      ],
+      "preferPatterns": [
+        "itv\\.m3u$",
+        "index\\.m3u$",
+        "ipv6\\.m3u$"
+      ],
+      "namePrefix": "fanmingming",
+      "sourceKind": "catalog",
+      "repo": "fanmingming/live",
+      "risk": "medium",
+      "maxSources": 10
+    },
+    {
+      "key": "publiciptv-cn",
+      "name": "Public IPTV 中国大陆",
+      "enabled": true,
+      "type": "embedded_m3u_pages",
+      "homepage": "https://publiciptv.com/countries/cn",
+      "links": [
+        {
+          "name": "China",
+          "url": "https://publiciptv.com/countries/cn/m3u",
+          "note": "Public IPTV 中国大陆页面内嵌 M3U，自动提取页面中的 #EXTM3U 内容。"
+        }
+      ],
+      "includePatterns": [
+        "countries/cn/m3u"
+      ],
+      "excludePatterns": [
+        "countries/(hk|tw|mo)/"
+      ],
+      "namePrefix": "Public IPTV",
+      "sourceKind": "catalog",
+      "repo": "publiciptv.com",
+      "risk": "medium",
+      "maxSources": 5
+    },
+    {
+      "key": "cqshushu-token",
+      "name": "IPTV神器Pro token接口",
+      "enabled": true,
+      "type": "generated_token_links",
+      "homepage": "https://iptv.cqshushu.com/jiekou.php",
+      "generateUrl": "https://iptv.cqshushu.com/jiekou.php?action=generate",
+      "includePatterns": [
+        "jiekou\\.php\\?jk=m3u&token="
+      ],
+      "excludePatterns": [],
+      "namePrefix": "cqshushu",
+      "sourceKind": "generated_token",
+      "repo": "iptv.cqshushu.com",
+      "risk": "medium",
+      "maxSources": 1,
+      "notes": "同步器会优先验证并复用 data/cache/source-token-cache.json 中缓存的 jk=m3u token 链接；缓存失效时重新访问 generateUrl 生成新 token。"
+    },
+    {
+      "key": "fanmingming-radio",
+      "name": "fanmingming/live 广播清单",
+      "enabled": false,
+      "type": "github_tree",
+      "homepage": "https://github.com/fanmingming/live/tree/main/radio/m3u",
+      "githubRepo": "fanmingming/live",
+      "githubRef": "main",
+      "githubPaths": [
+        "radio/m3u"
+      ],
+      "includePatterns": [
+        "radio/m3u/(index|fm)\\.m3u$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "index\\.m3u$"
+      ],
+      "namePrefix": "fanmingming radio",
+      "sourceKind": "catalog",
+      "repo": "fanmingming/live",
+      "risk": "medium",
+      "maxSources": 5,
+      "notes": "广播源默认不参与电视优选；需要时可显式执行 npm run source:sync -- --k fanmingming-radio。"
+    },
+    {
+      "key": "yuechan-live",
+      "name": "YueChan/Live 主分支",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/YueChan/Live",
+      "githubRepo": "YueChan/Live",
+      "githubRef": "main",
+      "githubPaths": [
+        ""
+      ],
+      "includePatterns": [
+        "(^|\\s|/)(IPTV|GNTV)\\.m3u$",
+        "(^|\\s|/)(CUTV|Hunan)\\.txt$"
+      ],
+      "excludePatterns": [
+        "Global\\.m3u$",
+        "Radio\\.m3u$",
+        "Adult"
+      ],
+      "preferPatterns": [
+        "IPTV\\.m3u$",
+        "GNTV\\.m3u$",
+        "Hunan\\.txt$",
+        "CUTV\\.txt$"
+      ],
+      "namePrefix": "YueChan",
+      "sourceKind": "catalog",
+      "repo": "YueChan/Live",
+      "risk": "medium",
+      "maxSources": 10
+    },
+    {
+      "key": "yuechan-live-patch",
+      "name": "YueChan/Live 补充分支",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/YueChan/Live/tree/YueChan-patch-1",
+      "githubRepo": "YueChan/Live",
+      "githubRef": "YueChan-patch-1",
+      "githubPaths": [
+        ""
+      ],
+      "includePatterns": [
+        "(^|\\s|/)(GATV|GBDT|Hunan)\\.m3u$"
+      ],
+      "excludePatterns": [
+        "Adult\\.m3u$"
+      ],
+      "preferPatterns": [
+        "GATV\\.m3u$",
+        "Hunan\\.m3u$",
+        "GBDT\\.m3u$"
+      ],
+      "namePrefix": "YueChan patch",
+      "sourceKind": "catalog",
+      "repo": "YueChan/Live",
+      "risk": "medium",
+      "maxSources": 10
+    },
+    {
+      "key": "bjzhou-iptv-collector",
+      "name": "bjzhou/iptv-collector output",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/bjzhou/iptv-collector/tree/output",
+      "githubRepo": "bjzhou/iptv-collector",
+      "githubRef": "output",
+      "githubPaths": [
+        ""
+      ],
+      "includePatterns": [
+        "(^|\\s|/)(iptv|iptv-cn|iptv-cm)\\.(m3u|txt)$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "iptv-cn\\.m3u$",
+        "iptv-cm\\.m3u$",
+        "iptv\\.m3u$",
+        "iptv-cn\\.txt$",
+        "iptv-cm\\.txt$",
+        "iptv\\.txt$"
+      ],
+      "namePrefix": "bjzhou iptv-collector",
+      "sourceKind": "catalog",
+      "repo": "bjzhou/iptv-collector",
+      "risk": "medium",
+      "maxSources": 6
+    },
+    {
+      "key": "suxuang-myiptv",
+      "name": "suxuang/myIPTV",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/suxuang/myIPTV",
+      "githubRepo": "suxuang/myIPTV",
+      "githubRef": "main",
+      "githubPaths": [
+        ""
+      ],
+      "includePatterns": [
+        "(^|\\s|/)(ipv4|ipv6|移动IPTV|小肥羊)\\.m3u$",
+        "(^|\\s|/)(咪咕直播|广东电信|移动IPV6|虎牙影视)\\.txt$"
+      ],
+      "excludePatterns": [
+        "README\\.md$",
+        "/back/",
+        "/img/",
+        "/player/",
+        "/tvlog/"
+      ],
+      "preferPatterns": [
+        "ipv4\\.m3u$",
+        "ipv6\\.m3u$",
+        "小肥羊\\.m3u$",
+        "移动IPTV\\.m3u$",
+        "广东电信\\.txt$",
+        "移动IPV6\\.txt$"
+      ],
+      "namePrefix": "suxuang myIPTV",
+      "sourceKind": "catalog",
+      "repo": "suxuang/myIPTV",
+      "risk": "medium",
+      "maxSources": 10
+    },
+    {
+      "key": "mzky-checklist",
+      "name": "mzky/checklist",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/mzky/checklist",
+      "githubRepo": "mzky/checklist",
+      "githubRef": "master",
+      "githubPaths": [
+        ""
+      ],
+      "includePatterns": [
+        "(^|\\s|/)(itvlist|beijing1|beijing2|beijng3|dalian|yingkou)\\.m3u$"
+      ],
+      "excludePatterns": [
+        "README\\.md$",
+        "\\.py$"
+      ],
+      "preferPatterns": [
+        "itvlist\\.m3u$",
+        "beijing1\\.m3u$",
+        "beijing2\\.m3u$"
+      ],
+      "namePrefix": "mzky checklist",
+      "sourceKind": "catalog",
+      "repo": "mzky/checklist",
+      "risk": "high",
+      "maxSources": 10
+    },
+    {
+      "key": "jia070310-4k-iptv-m3u",
+      "name": "jia070310/4K-IPTV-M3U 运营商 M3U",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/jia070310/4K-IPTV-M3U/tree/main/m3u",
+      "githubRepo": "jia070310/4K-IPTV-M3U",
+      "githubRef": "main",
+      "githubPaths": [
+        "m3u"
+      ],
+      "includePatterns": [
+        "m3u/.*\\.(m3u)$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "北京联通\\.m3u$",
+        "广东电信\\.m3u$",
+        "江苏电信\\.m3u$",
+        "浙江电信\\.m3u$",
+        "四川电信\\.m3u$",
+        "山东电信\\.m3u$",
+        "辽宁联通\\.m3u$"
+      ],
+      "namePrefix": "4K IPTV",
+      "sourceKind": "operator_multicast",
+      "repo": "jia070310/4K-IPTV-M3U",
+      "risk": "high",
+      "maxSources": 30,
+      "notes": "地区/运营商组播源通常只在对应宽带网络内可播放；默认只收 M3U，避免 TXT/M3U 双格式重复。"
+    },
+    {
+      "key": "aptv-cn",
+      "name": "Kimentanm/aptv 大陆电视源",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/Kimentanm/aptv/tree/master/m3u",
+      "githubRepo": "Kimentanm/aptv",
+      "githubRef": "master",
+      "githubPaths": [
+        "m3u"
+      ],
+      "includePatterns": [
+        "m3u/(iptv|bjyd|jsyd|zjyd|hunyd|ahyd|sdyd|fjyd|gxyd|gzyd|hbyd|hljyd|hnyd|jxyd|lnyd|shyd|sxyd)\\.m3u$"
+      ],
+      "excludePatterns": [
+        "radio\\.m3u$",
+        "video\\.m3u$",
+        "demo\\.m3u$"
+      ],
+      "preferPatterns": [
+        "iptv\\.m3u$",
+        "bjyd\\.m3u$",
+        "jsyd\\.m3u$",
+        "zjyd\\.m3u$",
+        "hunyd\\.m3u$",
+        "ahyd\\.m3u$",
+        "sdyd\\.m3u$"
+      ],
+      "namePrefix": "APTV",
+      "sourceKind": "catalog",
+      "repo": "Kimentanm/aptv",
+      "risk": "medium",
+      "maxSources": 20
+    },
+    {
+      "key": "iptv-org-cn-streams",
+      "name": "iptv-org 大陆 streams",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/iptv-org/iptv/tree/master/streams",
+      "githubRepo": "iptv-org/iptv",
+      "githubRef": "master",
+      "githubPaths": [
+        "streams"
+      ],
+      "includePatterns": [
+        "streams/(cn|cn_112114|cn_cctv|cn_cgtn|cn_yeslivetv)\\.m3u$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "cn\\.m3u$",
+        "cn_cctv\\.m3u$",
+        "cn_cgtn\\.m3u$",
+        "cn_112114\\.m3u$"
+      ],
+      "namePrefix": "iptv-org streams",
+      "sourceKind": "catalog",
+      "repo": "iptv-org/iptv",
+      "risk": "medium",
+      "maxSources": 10
+    },
+    {
+      "key": "iptv-org-gat-streams",
+      "name": "iptv-org 港澳台 streams",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/iptv-org/iptv/tree/master/streams",
+      "githubRepo": "iptv-org/iptv",
+      "githubRef": "master",
+      "githubPaths": [
+        "streams"
+      ],
+      "includePatterns": [
+        "streams/(hk|mo|tw)\\.m3u$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "hk\\.m3u$",
+        "mo\\.m3u$",
+        "tw\\.m3u$"
+      ],
+      "namePrefix": "iptv-org GAT streams",
+      "sourceKind": "catalog",
+      "repo": "iptv-org/iptv",
+      "risk": "medium",
+      "maxSources": 5
+    },
+    {
+      "key": "vbskycn-iptv",
+      "name": "vbskycn/iptv",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/vbskycn/iptv/tree/master/tv",
+      "githubRepo": "vbskycn/iptv",
+      "githubRef": "master",
+      "githubPaths": [
+        "tv"
+      ],
+      "includePatterns": [
+        "tv/iptv[46]\\.(m3u|txt)$"
+      ],
+      "excludePatterns": [],
+      "preferPatterns": [
+        "iptv4\\.m3u$",
+        "iptv4\\.txt$",
+        "iptv6\\.m3u$",
+        "iptv6\\.txt$"
+      ],
+      "namePrefix": "vbskycn",
+      "sourceKind": "catalog",
+      "repo": "vbskycn/iptv",
+      "risk": "medium",
+      "maxSources": 4
+    },
+    {
+      "key": "aptv-profile-cn",
+      "name": "APTV 推荐页中国相关源",
+      "enabled": true,
+      "type": "text_links",
+      "homepage": "https://profile.aptv.app/",
+      "includePatterns": [
+        "raw\\.githubusercontent\\.com/Kimentanm/aptv/.*/m3u/(iptv|bjyd|jsyd|zjyd|hunyd|ahyd|sdyd|fjyd|gxyd|gzyd|hbyd|hljyd|hnyd|jxyd|lnyd|shyd|sxyd)\\.m3u$",
+        "raw\\.githubusercontent\\.com/(mzky/checklist|suxuang/myIPTV)/.*\\.(m3u|txt)$",
+        "iptv\\.yang-1989\\.eu\\.org/.*/Gather\\.m3u$"
+      ],
+      "excludePatterns": [
+        "itv\\.aptv\\.app/china-iptv/",
+        "radio\\.m3u$",
+        "ya\\.m3u$",
+        "yqk\\.m3u$",
+        "douyu",
+        "huya",
+        "goodiptv"
+      ],
+      "preferPatterns": [
+        "Kimentanm/aptv/.*/iptv\\.m3u$",
+        "suxuang/myIPTV/.*/ipv4\\.m3u$",
+        "mzky/checklist/.*/itvlist\\.m3u$",
+        "Gather\\.m3u$"
+      ],
+      "namePrefix": "APTV profile",
+      "sourceKind": "catalog",
+      "repo": "profile.aptv.app",
+      "risk": "medium",
+      "maxSources": 20,
+      "notes": "页面里 itv.aptv.app/china-iptv/*.m3u 当前大量 404，默认排除，只保留可访问的上游原始或镜像源。"
+    },
+    {
+      "key": "imdazui-cn-core",
+      "name": "imDazui 中国核心直播源",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/imDazui/Tvlist-awesome-m3u-m3u8/tree/master/m3u",
+      "githubRepo": "imDazui/Tvlist-awesome-m3u-m3u8",
+      "githubRef": "master",
+      "githubPaths": [
+        "m3u"
+      ],
+      "includePatterns": [
+        "m3u/(CCTV|CCTV付费频道|CCTV\\+卫视.*|china|国内|国内地方台.*|国内电视台.*|中国广电cctv卫视|央视\\+卫视.*|百视TV)\\.(m3u|m3u8)$"
+      ],
+      "excludePatterns": [
+        "国外",
+        "Korea",
+        "广播",
+        "景区",
+        "轮播",
+        "影视",
+        "斗鱼",
+        "虎牙"
+      ],
+      "preferPatterns": [
+        "china\\.m3u$",
+        "国内\\.m3u$",
+        "国内电视台2025",
+        "CCTV\\.m3u$",
+        "央视\\+卫视"
+      ],
+      "namePrefix": "imDazui core",
+      "sourceKind": "catalog",
+      "repo": "imDazui/Tvlist-awesome-m3u-m3u8",
+      "risk": "medium",
+      "maxSources": 30
+    },
+    {
+      "key": "imdazui-cn-operator",
+      "name": "imDazui 中国地区运营商源",
+      "enabled": true,
+      "type": "github_tree",
+      "homepage": "https://github.com/imDazui/Tvlist-awesome-m3u-m3u8/tree/master/m3u",
+      "githubRepo": "imDazui/Tvlist-awesome-m3u-m3u8",
+      "githubRef": "master",
+      "githubPaths": [
+        "m3u"
+      ],
+      "includePatterns": [
+        "m3u/.*(北京|上海|天津|重庆|广东|江苏|浙江|山东|四川|辽宁|河北|河南|湖北|湖南|安徽|福建|江西|广西|贵州|云南|陕西|山西|甘肃|海南|内蒙古|黑龙江|吉林|杭州|武汉|成都|大连|联通|电信|移动|广电|有线|组播|IPTV|iptv).*(m3u|m3u8)$"
+      ],
+      "excludePatterns": [
+        "国外",
+        "台湾香港",
+        "香港澳门",
+        "广播",
+        "景区",
+        "轮播",
+        "影视",
+        "rtsp\\.m3u$"
+      ],
+      "preferPatterns": [
+        "广东",
+        "江苏",
+        "浙江",
+        "上海",
+        "北京",
+        "山东",
+        "四川",
+        "移动",
+        "电信",
+        "联通"
+      ],
+      "namePrefix": "imDazui operator",
+      "sourceKind": "operator_multicast",
+      "repo": "imDazui/Tvlist-awesome-m3u-m3u8",
+      "risk": "high",
+      "maxSources": 80,
+      "notes": "地区/运营商源数量多，且很多是组播/内网源，能否播放取决于本地地区和宽带运营商。"
+    },
+    {
+      "key": "dongyubin-tvbox-lives",
+      "name": "dongyubin/IPTV TVBox 文档内直播源",
+      "enabled": true,
+      "type": "tvbox_config_links",
+      "homepage": "https://raw.githubusercontent.com/dongyubin/IPTV/main/IPTV-TVbox%E7%B3%BB%E5%88%97%E8%BD%AF%E4%BB%B6%E5%8F%8A%E6%92%AD%E6%94%BE%E6%BA%90.md",
+      "includePatterns": [
+        "\\.json(?:$|[?#])",
+        "pastebin\\.com/raw/"
+      ],
+      "excludePatterns": [
+        "vip",
+        "adult"
+      ],
+      "preferPatterns": [
+        "dxawi",
+        "raw\\.liucn",
+        "YuanHsing",
+        "jyoketsu"
+      ],
+      "namePrefix": "dongyubin tvbox",
+      "sourceKind": "config",
+      "repo": "dongyubin/IPTV",
+      "risk": "medium",
+      "maxSources": 30,
+      "notes": "这不是直接 M3U 目录；同步器会先从 Markdown 提取 TVBox JSON 配置链接，再解析配置里的 lives[] 直播源入口。"
+    }
+  ]
+}

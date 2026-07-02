@@ -1,0 +1,426 @@
+{
+  "_comment": "策略配置文件。脚本内只保留 balanced 兜底策略，日常策略请在本文件维护；字段说明见 _schemaNotes。",
+  "_schemaNotes": {
+    "defaultStrategy": "默认策略 key；命令行没有传 --st/--strategy 时使用。",
+    "channelCuration": "频道收口默认配置；defaultPreset 当前可用 none、cn、cn-full、cn-plus。",
+    "strategies": "策略数组；每个对象代表一个可通过 --st <key> 选择的策略组。",
+    "key": "策略唯一标识，例如 fast。",
+    "label": "策略中文名称，用于交互式命令行和策略列表显示。",
+    "description": "策略说明，用于帮助用户理解用途。",
+    "enabled": "是否启用；false 时该策略不会出现在可选列表中。",
+    "filters": "输出过滤条件；status=all/ok/failed，source/group/channel/errorCode 为关键词过滤，minHeight 为最低分辨率高度。",
+    "sort": "排序配置；entry/entryDir 控制明细排序，report/reportDir 控制报告里的源排序。",
+    "export": "导出配置；exportAll=false 表示只导出可播放条目，true 表示导出过滤后的全部条目。",
+    "runtime": "检测运行参数；控制下载超时、检测超时、重试、检测模式、预检、熔断和并发。",
+    "downloadTimeoutMs": "下载每个直播源文件的超时时间，单位毫秒。",
+    "checkTimeoutMs": "检测每条播放 URL 的超时时间，单位毫秒。",
+    "checkRetry": "每条播放 URL 检测失败后的重试次数；0 表示不重试。",
+    "checkMode": "检测模式；full 使用 iptv-checker 完整检测，fast 使用轻量 ffprobe 快速检测。",
+    "preflight": "是否在播放检测前启用 HTTP header 预检。",
+    "preflightTimeoutMs": "HTTP header 预检超时时间，单位毫秒。",
+    "hostTimeoutLimit": "同 host 连续 header 超时达到该阈值后，本次运行跳过该 host 后续 URL。",
+    "sourceParallel": "同时处理多少个直播源。",
+    "preflightParallel": "单个直播源内 HTTP header 预检总并发。",
+    "preflightHostParallel": "单个直播源内同一个 host 的 HTTP header 预检并发。",
+    "checkParallel": "单个直播源内播放 URL 检测总并发。",
+    "checkHostParallel": "单个直播源内同一个 host 的播放 URL 检测并发。",
+    "curation": "频道收口行为配置；策略组通常不绑定 preset，只配置 keepPerChannel、preFilter、清晰度优选和低清兜底等行为。命令行 --preset/--curation-preset 优先级最高。",
+    "preset": "频道匹配规则集合；推荐通过命令行 --preset 指定，策略组内可留空。",
+    "keepPerChannel": "每个匹配频道最终保留几条线路。",
+    "preferredMinHeight": "频道收口优选高度；例如 1080 表示同频道优先选择 1080P 及以上线路。",
+    "fallbackMinHeight": "频道收口兜底高度；例如 720 表示没有优选线路时可选择 720P 及以上线路。",
+    "allowLowResFallback": "是否允许低于 fallbackMinHeight 的可播线路作为低清兜底；true 更重视频道覆盖，false 更重视清晰度。",
+    "preFilter": "true 表示检测前按频道规则过滤未匹配频道。",
+    "includeUnmatched": "true 表示收口后仍保留未匹配频道，通常用于审计。",
+    "includeFailed": "true 表示失败的匹配频道也可进入收口候选，通常用于审计。",
+    "pipelineMode": "流水线模式；stage 表示全局 6 阶段执行，source 表示每个直播源独立流水线执行。"
+  },
+  "generatedAt": "2026-06-29T00:00:00+08:00",
+  "purpose": "Live quality strategy presets for external-live-quality-cli.",
+  "defaultStrategy": "balanced",
+  "channelCuration": {
+    "defaultPreset": "none"
+  },
+  "strategies": [
+    {
+      "key": "balanced",
+      "label": "均衡优选",
+      "description": "仅保留可播放频道，使用默认稳定排序，适合大多数用户。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "default",
+        "entryDir": "asc",
+        "report": "default",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "fast",
+      "label": "快速检测",
+      "description": "快速检测模式：检测超时 6 秒，不重试，启用预检和较高并发；频道集合请用 --preset 指定。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "default",
+        "entryDir": "asc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 6000,
+        "checkRetry": 0,
+        "checkMode": "fast",
+        "pipelineMode": "stage",
+        "preflight": true,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 5,
+        "preflightParallel": 100,
+        "preflightHostParallel": 3,
+        "checkParallel": 30,
+        "checkHostParallel": 2
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": true,
+        "preFilter": true,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "hd",
+      "label": "高清优选",
+      "description": "仅保留可播放频道，过滤 720P 以下，按分辨率从高到低排序。",
+      "enabled": true,
+      "filters": {
+        "status": "ok",
+        "minHeight": 720
+      },
+      "sort": {
+        "entry": "resolution",
+        "entryDir": "desc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": false,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "speed",
+      "label": "速度优选",
+      "description": "仅保留可播放频道，使用当前可用数据下的稳定优先排序；频道级测速字段加入后可升级。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "default",
+        "entryDir": "asc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 720,
+        "fallbackMinHeight": 480,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "bitrate",
+      "label": "高码率优选",
+      "description": "仅保留可播放频道，按码率从高到低排序。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "bitrate",
+        "entryDir": "desc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "fps",
+      "label": "高帧率优选",
+      "description": "仅保留可播放频道，按帧率从高到低排序。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "fps",
+        "entryDir": "desc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "coverage",
+      "label": "覆盖优先",
+      "description": "最大化频道覆盖和备用线路，适合补齐缺失频道和人工复盘。",
+      "enabled": true,
+      "filters": {
+        "status": "ok"
+      },
+      "sort": {
+        "entry": "default",
+        "entryDir": "asc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 3,
+        "preferredMinHeight": 720,
+        "fallbackMinHeight": 360,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "strict-hd",
+      "label": "严格高清",
+      "description": "严格优先高清发布，不保留低清兜底，频道可能缺失但输出更干净。",
+      "enabled": true,
+      "filters": {
+        "status": "ok",
+        "minHeight": 720
+      },
+      "sort": {
+        "entry": "resolution",
+        "entryDir": "desc",
+        "report": "ok-rate",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": false
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 1,
+        "preferredMinHeight": 1080,
+        "fallbackMinHeight": 720,
+        "allowLowResFallback": false,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": false
+      }
+    },
+    {
+      "key": "audit",
+      "label": "全量审计",
+      "description": "保留可用和失败条目，用于排查源质量和错误分布。",
+      "enabled": true,
+      "filters": {
+        "status": "all"
+      },
+      "sort": {
+        "entry": "default",
+        "entryDir": "asc",
+        "report": "failed",
+        "reportDir": "desc"
+      },
+      "export": {
+        "exportAll": true
+      },
+      "runtime": {
+        "downloadTimeoutMs": 15000,
+        "checkTimeoutMs": 15000,
+        "checkRetry": 1,
+        "checkMode": "full",
+        "pipelineMode": "stage",
+        "preflight": false,
+        "preflightTimeoutMs": 5000,
+        "hostTimeoutLimit": 3,
+        "sourceParallel": 1,
+        "preflightParallel": 1,
+        "preflightHostParallel": 2,
+        "checkParallel": 20,
+        "checkHostParallel": 1
+      },
+      "curation": {
+        "keepPerChannel": 3,
+        "preferredMinHeight": 720,
+        "fallbackMinHeight": 480,
+        "allowLowResFallback": true,
+        "preFilter": false,
+        "includeUnmatched": false,
+        "includeFailed": true
+      }
+    }
+  ]
+}

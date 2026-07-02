@@ -77,8 +77,8 @@ interface NormalizedChannelCandidate {
   priority: number;
 }
 
-const DEFAULT_CHANNEL_TARGETS_PATH = resolve('data', 'channel-targets.json');
-const DEFAULT_CHANNEL_ALIASES_PATH = resolve('data', 'channel-aliases.json');
+const DEFAULT_CHANNEL_TARGETS_PATH = resolve('config', 'channel-targets.json');
+const DEFAULT_CHANNEL_ALIASES_PATH = resolve('config', 'channel-aliases.json');
 
 function normalizeText(value: string): string {
   return value

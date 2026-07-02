@@ -7,7 +7,9 @@ coverage/
 *.tsbuildinfo
 
 # Local data and generated files
-data/
+data/source.json
+data/cache/
+res/
 other/
 tvbox_backup.json
 
