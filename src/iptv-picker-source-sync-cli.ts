@@ -137,7 +137,7 @@ interface CatalogReportMeta {
   tokenCacheEnabled: boolean;
 }
 
-const DEFAULT_CONFIG_PATH = 'data/source-catalogs.json';
+const DEFAULT_CONFIG_PATH = 'config/source-subscriptions.json';
 const DEFAULT_OUTPUT_PATH = 'data/source.json';
 const DEFAULT_REPORT_PATH = 'res/iptv-picker-source-sync.report.md';
 const DEFAULT_GITHUB_CACHE_PATH = 'data/cache/source-catalog-cache.json';
@@ -197,7 +197,7 @@ function defaultCatalogFile(): CatalogFile {
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    purpose: 'Catalog definitions for discovering public IPTV M3U/TXT source lists and merging them into data/source.json.',
+    purpose: 'Subscription source definitions for discovering public IPTV M3U/TXT source lists and merging them into data/source.json.',
     catalogs: [
       {
         key: 'ibert',
@@ -263,7 +263,7 @@ function usage(): string {
     '  node dist/iptv-picker-source-sync-cli.js --k ibert',
     '',
     'Options:',
-    `  --c, --config <file>       catalog config, default: ${DEFAULT_CONFIG_PATH}`,
+    `  --c, --config <file>       source subscription config, default: ${DEFAULT_CONFIG_PATH}`,
     `  --o, --out <file>          merged source output, default: ${DEFAULT_OUTPUT_PATH}`,
     `  --rp, --report <file>      sync report, default: ${DEFAULT_REPORT_PATH}`,
     `  --gc, --github-cache <file> GitHub tree cache, default: ${DEFAULT_GITHUB_CACHE_PATH}`,
@@ -277,7 +277,7 @@ function usage(): string {
     `  --grd, --github-retry-delay <ms> base retry delay, default: ${DEFAULT_GITHUB_RETRY_DELAY_MS}`,
     '  --ngc, --no-github-cache   do not read/write GitHub tree cache',
     '  --ntc, --no-token-cache     do not read/write generated token cache',
-    '  --init                    create default catalog config and exit',
+    '  --init                    create default source subscription config and exit',
     '  --p, --print              print JSON summary',
     '  --q, --quiet              suppress progress logs',
   ].join('\n');
@@ -1416,7 +1416,7 @@ async function main(): Promise<void> {
   const configPath = resolve(args.config);
   if (args.init) {
     ensureDefaultCatalogFile(configPath);
-    console.log(`[iptv-picker-source-sync] Default catalog config ready: ${args.config}`);
+    console.log(`[iptv-picker-source-sync] Default source subscription config ready: ${args.config}`);
     return;
   }
   if (configPath === resolve(DEFAULT_CONFIG_PATH)) ensureDefaultCatalogFile(configPath);

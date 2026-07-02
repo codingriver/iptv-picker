@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, extname, resolve } from 'path';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, dirname, extname, resolve } from 'path';
 import {
   buildIptvPickerCoreReportFromEntries,
   checkIptvPickerCoreSources,
@@ -317,6 +317,7 @@ const DEFAULT_STRATEGY_PATH = resolve('config', 'strategy.json');
 const DEFAULT_CHANNEL_TARGETS_PATH = resolve('config', 'channel-targets.json');
 const DEFAULT_CHANNEL_ALIASES_PATH = resolve('config', 'channel-aliases.json');
 const DEFAULT_LOG_PATH = 'res/res.log';
+const DEFAULT_PUBLISH_DIR = 'publish';
 
 let runtimeLogPath: string | undefined;
 let runtimeDebug = false;
@@ -1203,7 +1204,8 @@ function usage(): string {
     '  --report-out <file>         deprecated; text report output has been removed',
     '  --source-stats-out <file>   source statistics markdown, default: <out>.source-stats.md',
     '  --channel-stats-out <file>  output channel statistics markdown, default: <out>.channel-stats.md',
-    '  --export-live <file>        export playable live playlists for TVBox/影视仓, writes .m3u/.txt/.json siblings',
+    `  --export-live <file>        export playable live playlists for TVBox/影视仓, writes .m3u/.txt/.json siblings, default: ${DEFAULT_LIVE_EXPORT_PATH}`,
+    '  --no-export-live            disable live playlist export',
     '  --export-format m3u|txt|json live playlist format hint, default: inferred from file extension or m3u',
     '  --export-all                export all filtered entries instead of only ok=true entries',
     '  --init-default-sources      create the default sources file and exit',
@@ -1300,6 +1302,7 @@ function usage(): string {
     `default sources file: ${DEFAULT_INPUT_PATH}`,
     '  if the default file does not exist, the CLI will create it with open-source IPTV sources',
     `default output: ${DEFAULT_OUTPUT_PATH}, report: ${deriveReportPath(DEFAULT_OUTPUT_PATH)}, markdown reports: ${deriveSourceStatsReportPath(DEFAULT_OUTPUT_PATH)}, ${deriveChannelStatsReportPath(DEFAULT_OUTPUT_PATH)}, live exports: res/iptv.m3u, res/iptv.txt, res/iptv.json`,
+    `publish: when curation matches all targets, copy live exports to ${DEFAULT_PUBLISH_DIR}/; logs, reports, and ${DEFAULT_OUTPUT_PATH} are not copied`,
   ].join('\n');
 }
 
@@ -1307,6 +1310,7 @@ function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     out: DEFAULT_OUTPUT_PATH,
     exportFormat: 'm3u',
+    exportLive: DEFAULT_LIVE_EXPORT_PATH,
     exportAll: false,
     noReport: false,
     noMdReports: false,
@@ -1364,6 +1368,7 @@ function parseArgs(argv: string[]): CliArgs {
     else if (item === '--source-stats-out') args.sourceStatsOut = argv[++i];
     else if (item === '--channel-stats-out') args.channelStatsOut = argv[++i];
     else if (item === '--export-live') args.exportLive = argv[++i];
+    else if (item === '--no-export-live') args.exportLive = undefined;
     else if (item === '--export-format') args.exportFormat = parseLiveExportFormat(argv[++i]);
     else if (item === '--export-all') args.exportAll = true;
     else if (item === '--no-report') args.noReport = true;
@@ -2208,6 +2213,53 @@ function buildLiveExports(result: IptvPickerCoreFileResult, args: CliArgs): Arra
       ...buildLiveExport(result, exportArgs),
     };
   });
+}
+
+interface PublishArtifact {
+  type: 'json' | 'live';
+  source: string;
+  target: string;
+}
+
+function shouldPublishOutput(result: IptvPickerCoreFileResult, args: CliArgs): boolean {
+  const curation = result.output?.channelCuration;
+  return args.curationPreset !== 'none'
+    && !!curation
+    && curation.targets > 0
+    && curation.missingTargets === 0;
+}
+
+function buildPublishArtifacts(
+  liveExports: Array<{ file: string }>,
+  publishDir = DEFAULT_PUBLISH_DIR,
+): PublishArtifact[] {
+  const targetDir = resolve(publishDir);
+  const seen = new Set<string>();
+  const items: PublishArtifact[] = [];
+  const push = (type: PublishArtifact['type'], source: string) => {
+    const resolvedSource = resolve(source);
+    const target = resolve(targetDir, basename(resolvedSource));
+    const key = resolvedSource.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ type, source: resolvedSource, target });
+  };
+
+  for (const liveExport of liveExports) push('live', liveExport.file);
+  return items;
+}
+
+function publishMatchedOutput(
+  liveExports: Array<{ file: string }>,
+): PublishArtifact[] {
+  const artifacts = buildPublishArtifacts(liveExports);
+  if (artifacts.length === 0) return artifacts;
+  mkdirSync(resolve(DEFAULT_PUBLISH_DIR), { recursive: true });
+  for (const item of artifacts) {
+    if (item.source === item.target) continue;
+    copyFileSync(item.source, item.target);
+  }
+  return artifacts;
 }
 
 function pct(numerator: number, denominator: number): number {
@@ -3229,7 +3281,6 @@ async function main(): Promise<void> {
   } else {
     if (!args.url && !args.input && args.strategy) {
       args.input = DEFAULT_INPUT_PATH;
-      if (!args.exportLive) args.exportLive = DEFAULT_LIVE_EXPORT_PATH;
     }
     args = applyStrategy(args, strategyCatalog.strategies);
   }
@@ -3364,12 +3415,21 @@ async function main(): Promise<void> {
   for (const liveExport of liveExports) writeFileSync(liveExport.file, liveExport.content, 'utf8');
   if (sourceStatsOut) writeFileSync(sourceStatsOut, buildSourceStatsMarkdown(result, outputResult, { ...args, reportOut }), 'utf8');
   if (channelStatsOut) writeFileSync(channelStatsOut, buildOutputChannelStatsMarkdown(outputResult, { ...args, reportOut }), 'utf8');
+  const publishedArtifacts = shouldPublishOutput(outputResult, args)
+    ? publishMatchedOutput(liveExports)
+    : [];
   if (!args.quiet) {
     cliLog(`[wrote:json] [file:${out}]`);
     if (sourceStatsOut) cliLog(`[wrote:md] [type:source-stats] [file:${sourceStatsOut}]`);
     if (channelStatsOut) cliLog(`[wrote:md] [type:channel-stats] [file:${channelStatsOut}]`);
     for (const liveExport of liveExports) {
       cliLog(`[wrote:live] [format:${liveExport.format}] [entries:${liveExport.entries.length}] [file:${liveExport.file}]`);
+    }
+    if (publishedArtifacts.length) {
+      cliLog(`[publish:matched] [dir:${resolve(DEFAULT_PUBLISH_DIR)}] [files:${publishedArtifacts.length}]`);
+      for (const item of publishedArtifacts) {
+        cliLog(`[publish:copy] [type:${item.type}] [from:${item.source}] [to:${item.target}]`);
+      }
     }
     cliLog(`[output] [entries:${outputResult.entries.length}/${result.entries.length}]`);
   }
