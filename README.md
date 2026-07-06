@@ -213,3 +213,56 @@ npm run typecheck
 npm run build
 npm test
 ```
+
+## Docker
+
+本地构建镜像：
+
+```bash
+npm run docker:build
+```
+
+查看主命令帮助：
+
+```bash
+docker run --rm iptv-picker --help
+```
+
+常用运行方式是把 `data`、`res`、`publish` 挂载出来，避免容器删除后丢失同步源和产物：
+
+```bash
+docker run --rm \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/res:/app/res" \
+  -v "$PWD/publish:/app/publish" \
+  iptv-picker --st fast --preset cn
+```
+
+镜像入口也支持项目内的其它 CLI：
+
+```bash
+docker run --rm -v "$PWD/data:/app/data" iptv-picker source-sync
+docker run --rm -v "$PWD/data:/app/data" iptv-picker tvbox-extract --help
+```
+
+GitHub Actions 会在发布或强制更新 `*.*.*` / `v*.*.*` 标签和手动触发时构建镜像，并推送到 Docker Hub：
+
+```text
+<DOCKERHUB_NAMESPACE 或 DOCKERHUB_USERNAME>/iptv-picker
+```
+
+当前 workflow 绑定的 GitHub Environment 名称为：
+
+```text
+DOCKERHUB_USERNAME
+```
+
+需要在该 Environment 中配置 Variables，或同名 Secrets：
+
+```text
+DOCKERHUB_USERNAME  Docker Hub 登录用户名
+DOCKERHUB_TOKEN     Docker Hub Access Token
+
+Variables 可选:
+  DOCKERHUB_NAMESPACE Docker Hub 命名空间；不填则使用 DOCKERHUB_USERNAME
+```
