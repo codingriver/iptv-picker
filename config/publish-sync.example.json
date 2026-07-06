@@ -1,0 +1,55 @@
+{
+  "enabled": false,
+  "failOnRemoteError": true,
+  "timeoutMs": 30000,
+  "targets": [
+    {
+      "type": "webdav",
+      "name": "my-webdav",
+      "enabled": true,
+      "baseUrl": "https://example.com/dav",
+      "username": "user",
+      "password": "password",
+      "remoteDir": "/iptv",
+      "files": ["iptv.m3u", "iptv.txt", "iptv.json"]
+    },
+    {
+      "type": "http-post",
+      "name": "my-site",
+      "enabled": true,
+      "url": "https://site.example.com/api/iptv",
+      "token": "token",
+      "authHeader": "Authorization",
+      "mode": "multipart",
+      "files": ["iptv.m3u", "iptv.txt", "iptv.json"],
+      "fields": {
+        "source": "iptv-picker"
+      }
+    },
+    {
+      "type": "http-post",
+      "name": "my-binary-upload",
+      "enabled": false,
+      "url": "https://site.example.com/api/upload",
+      "token": "token",
+      "authHeader": "Authorization",
+      "mode": "binary",
+      "remoteDir": "folder",
+      "pathParam": "path",
+      "contentType": "text/plain",
+      "files": ["iptv.m3u", "iptv.txt", "iptv.json"]
+    },
+    {
+      "type": "http-get",
+      "name": "my-refresh-hook",
+      "enabled": true,
+      "url": "https://site.example.com/api/refresh",
+      "token": "token",
+      "authHeader": "Authorization",
+      "files": ["iptv.m3u", "iptv.txt", "iptv.json"],
+      "fields": {
+        "source": "iptv-picker"
+      }
+    }
+  ]
+}

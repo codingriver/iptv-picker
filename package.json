@@ -37,6 +37,7 @@
     "picker:strategy:list": "node dist/iptv-picker-cli.js --list-strategies",
     "picker:source:sync": "node dist/iptv-picker-source-sync-cli.js",
     "picker:source:init": "node dist/iptv-picker-source-sync-cli.js --init",
+    "picker:publish:sync": "node dist/iptv-picker-cli.js sync",
     "picker:tvbox:extract": "node dist/iptv-picker-tvbox-extract-cli.js",
     "picker:tvbox:init": "node dist/iptv-picker-tvbox-extract-cli.js --init-default-configs",
     "test": "npm run test:channel-curation && npm run test:picker",

@@ -242,6 +242,7 @@ docker run --rm \
 
 ```bash
 docker run --rm -v "$PWD/data:/app/data" iptv-picker source-sync
+docker run --rm -v "$PWD/publish:/app/publish" iptv-picker sync
 docker run --rm -v "$PWD/data:/app/data" iptv-picker tvbox-extract --help
 ```
 
@@ -265,4 +266,100 @@ DOCKERHUB_TOKEN     Docker Hub Access Token
 
 Variables 可选:
   DOCKERHUB_NAMESPACE Docker Hub 命名空间；不填则使用 DOCKERHUB_USERNAME
+```
+
+## 远端发布
+
+当频道优选完整命中并复制到 `publish/` 后，可以继续发布到 WebDAV、HTTP POST 或 HTTP GET 站点。
+
+Docker 场景推荐使用环境变量：
+
+```bash
+docker run --rm \
+  -e PUBLISH_REMOTE_ENABLED=true \
+  -e PUBLISH_WEBDAV_URL="https://example.com/dav" \
+  -e PUBLISH_WEBDAV_USERNAME="user" \
+  -e PUBLISH_WEBDAV_PASSWORD="password" \
+  -e PUBLISH_WEBDAV_REMOTE_DIR="/iptv" \
+  -e PUBLISH_POST_URL="https://site.example.com/api/iptv" \
+  -e PUBLISH_POST_TOKEN="token" \
+  -e PUBLISH_GET_URL="https://site.example.com/api/refresh" \
+  -e PUBLISH_GET_TOKEN="token" \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/res:/app/res" \
+  -v "$PWD/publish:/app/publish" \
+  iptv-picker --st fast --preset cn
+```
+
+非 Docker 场景可以复制模板：
+
+```bash
+cp config/publish-sync.example.json config/publish-sync.json
+```
+
+然后把 `enabled` 改为 `true` 并按需配置目标。真实配置文件 `config/publish-sync.json` 已加入 `.gitignore`，不会提交到仓库，因此本地运行可以直接在配置中填写 `url`、`token`、`username`、`password` 等参数。
+
+常用环境变量：
+
+```text
+PUBLISH_REMOTE_ENABLED=true|false
+PUBLISH_REMOTE_FAIL_ON_ERROR=true|false
+PUBLISH_REMOTE_TIMEOUT_MS=30000
+PUBLISH_SYNC_CONFIG_FILE=config/publish-sync.json
+
+PUBLISH_WEBDAV_URL=https://example.com/dav
+PUBLISH_WEBDAV_USERNAME=user
+PUBLISH_WEBDAV_PASSWORD=password
+PUBLISH_WEBDAV_REMOTE_DIR=/iptv
+PUBLISH_WEBDAV_FILES=iptv.m3u,iptv.txt,iptv.json
+
+PUBLISH_POST_URL=https://site.example.com/api/iptv
+PUBLISH_POST_TOKEN=token
+PUBLISH_POST_MODE=multipart|json|binary
+PUBLISH_POST_FILES=iptv.m3u,iptv.txt,iptv.json
+PUBLISH_POST_REMOTE_DIR=folder
+PUBLISH_POST_PATH_PARAM=path
+PUBLISH_POST_CONTENT_TYPE=text/plain
+
+PUBLISH_GET_URL=https://site.example.com/api/refresh
+PUBLISH_GET_TOKEN=token
+PUBLISH_GET_FILES=iptv.m3u,iptv.txt,iptv.json
+```
+
+发布结果会写入 `res/res.json` 的 `output.remotePublish`。
+
+`multipart` 和 `binary` 上传都会按 `files` 顺序逐个提交文件，当前文件成功后才会继续提交下一个；任一文件失败会停止后续提交。
+
+也可以不重新执行优选，直接把当前 `publish/` 目录下已有文件按远端配置推送：
+
+```bash
+node dist/iptv-picker-cli.js sync
+```
+
+兼容原始 body 上传接口，例如：
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer ${API_TOKEN}" \
+  -H "Content-Type: text/plain" \
+  --data-binary "@demo.txt" \
+  "${BASE_URL}/api/upload?path=folder/demo.txt"
+```
+
+对应配置：
+
+```json
+{
+  "type": "http-post",
+  "name": "iptv",
+  "enabled": true,
+  "url": "https://iptv.303066.xyz/api/upload",
+  "token": "token",
+  "authHeader": "Authorization",
+  "mode": "binary",
+  "remoteDir": "folder",
+  "pathParam": "path",
+  "contentType": "text/plain",
+  "files": ["iptv.m3u", "iptv.txt", "iptv.json"]
+}
 ```

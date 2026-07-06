@@ -6,9 +6,13 @@ case "$1" in
     shift
     set -- node dist/iptv-picker-cli.js "$@"
     ;;
-  source-sync|sync)
+  source-sync)
     shift
     set -- node dist/iptv-picker-source-sync-cli.js "$@"
+    ;;
+  publish-sync|sync)
+    shift
+    set -- node dist/iptv-picker-cli.js sync "$@"
     ;;
   tvbox-extract|tvbox)
     shift

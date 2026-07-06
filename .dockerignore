@@ -11,6 +11,7 @@ res
 publish
 other
 tvbox_backup.json
+config/publish-sync.json
 
 .env
 .env.*

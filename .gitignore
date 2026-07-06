@@ -12,7 +12,8 @@ data/cache/
 res/
 other/
 tvbox_backup.json
-
+/config/publish-sync.json
+/publish
 # Environment and Cloudflare local state
 .env
 .env.*

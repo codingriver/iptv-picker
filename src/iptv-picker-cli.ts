@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, dirname, extname, resolve } from 'path';
 import {
   buildIptvPickerCoreReportFromEntries,
@@ -147,6 +147,9 @@ interface CliArgs {
   curationIncludeFailed: boolean;
   curationTargetsFile: string;
   curationAliasesFile: string;
+  publishSyncConfigFile: string;
+  noPublishSync: boolean;
+  publishSyncOnly: boolean;
   initDefaultSources?: boolean;
   initDefaultStrategies?: boolean;
   initDefaultChannelTargets?: boolean;
@@ -318,6 +321,71 @@ const DEFAULT_CHANNEL_TARGETS_PATH = resolve('config', 'channel-targets.json');
 const DEFAULT_CHANNEL_ALIASES_PATH = resolve('config', 'channel-aliases.json');
 const DEFAULT_LOG_PATH = 'res/res.log';
 const DEFAULT_PUBLISH_DIR = 'publish';
+const DEFAULT_PUBLISH_SYNC_CONFIG_PATH = resolve('config', 'publish-sync.json');
+
+type RemotePublishTargetType = 'webdav' | 'http-post' | 'http-get';
+type RemotePostMode = 'multipart' | 'json' | 'binary';
+
+interface RemotePublishConfigFile {
+  enabled?: unknown;
+  failOnRemoteError?: unknown;
+  timeoutMs?: unknown;
+  targets?: RemotePublishTargetConfig[];
+}
+
+interface RemotePublishTargetConfig {
+  type?: unknown;
+  name?: unknown;
+  enabled?: unknown;
+  files?: unknown;
+  timeoutMs?: unknown;
+  baseUrl?: unknown;
+  baseUrlEnv?: unknown;
+  username?: unknown;
+  usernameEnv?: unknown;
+  password?: unknown;
+  passwordEnv?: unknown;
+  remoteDir?: unknown;
+  pathParam?: unknown;
+  contentType?: unknown;
+  url?: unknown;
+  urlEnv?: unknown;
+  token?: unknown;
+  tokenEnv?: unknown;
+  authHeader?: unknown;
+  mode?: unknown;
+  fields?: unknown;
+  headers?: unknown;
+}
+
+interface RemotePublishResolvedTarget {
+  type: RemotePublishTargetType;
+  name: string;
+  enabled: boolean;
+  files?: string[];
+  timeoutMs?: number;
+  baseUrl?: string;
+  username?: string;
+  password?: string;
+  remoteDir?: string;
+  pathParam?: string;
+  contentType?: string;
+  url?: string;
+  token?: string;
+  authHeader?: string;
+  mode?: RemotePostMode;
+  fields?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
+interface RemotePublishResolvedConfig {
+  enabled: boolean;
+  failOnRemoteError: boolean;
+  timeoutMs: number;
+  targets: RemotePublishResolvedTarget[];
+}
+
+type RemotePublishResult = NonNullable<NonNullable<IptvPickerCoreFileResult['output']>['remotePublish']>[number];
 
 let runtimeLogPath: string | undefined;
 let runtimeDebug = false;
@@ -1253,6 +1321,10 @@ function usage(): string {
     `  --curation-include-failed   allow failed matched channels in curation output`,
     `  --curation-targets-file <file>  channel target config, default: ${DEFAULT_CHANNEL_TARGETS_PATH}`,
     `  --curation-aliases-file <file>  channel alias config, default: ${DEFAULT_CHANNEL_ALIASES_PATH}`,
+    `  sync                         short command: upload existing files under ${DEFAULT_PUBLISH_DIR}/ using publish sync config`,
+    `  --publish-sync-file <file>   publish sync config, default: ${DEFAULT_PUBLISH_SYNC_CONFIG_PATH}`,
+    `  --publish-sync-only          upload existing files under ${DEFAULT_PUBLISH_DIR}/ using publish sync config`,
+    `  --no-publish-sync            disable WebDAV/HTTP POST/GET publish sync`,
     '  --init-default-channel-targets create the default channel target file and exit',
     '  --init-default-channel-aliases create the default channel alias file and exit',
     '  --list-strategies           list available strategy presets and exit',
@@ -1354,10 +1426,14 @@ function parseArgs(argv: string[]): CliArgs {
     curationIncludeFailed: false,
     curationTargetsFile: DEFAULT_CHANNEL_TARGETS_PATH,
     curationAliasesFile: DEFAULT_CHANNEL_ALIASES_PATH,
+    publishSyncConfigFile: process.env.PUBLISH_SYNC_CONFIG_FILE || DEFAULT_PUBLISH_SYNC_CONFIG_PATH,
+    noPublishSync: false,
+    publishSyncOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const item = argv[i];
-    if (item === '--help' || item === '-h') args.help = true;
+    if (item === 'sync' || item === 'publish-sync') args.publishSyncOnly = true;
+    else if (item === '--help' || item === '-h') args.help = true;
     else if (item === '--init-default-sources') args.initDefaultSources = true;
     else if (item === '--interactive' || item === '-i') args.interactive = true;
     else if (item === '--url') args.url = argv[++i];
@@ -1488,6 +1564,9 @@ function parseArgs(argv: string[]): CliArgs {
     }
     else if (item === '--curation-targets-file') args.curationTargetsFile = argv[++i];
     else if (item === '--curation-aliases-file') args.curationAliasesFile = argv[++i];
+    else if (item === '--publish-sync-file') args.publishSyncConfigFile = argv[++i];
+    else if (item === '--publish-sync-only') args.publishSyncOnly = true;
+    else if (item === '--no-publish-sync') args.noPublishSync = true;
     else if (item === '--status') args.status = parseStatus(argv[++i]);
     else if (item === '--source') args.source = argv[++i];
     else if (item === '--group') args.group = argv[++i];
@@ -2260,6 +2339,482 @@ function publishMatchedOutput(
     copyFileSync(item.source, item.target);
   }
   return artifacts;
+}
+
+function buildPublishDirArtifacts(publishDir = DEFAULT_PUBLISH_DIR): PublishArtifact[] {
+  const targetDir = resolve(publishDir);
+  if (!existsSync(targetDir)) return [];
+  return readdirSync(targetDir, { withFileTypes: true })
+    .filter((item) => item.isFile())
+    .map((item) => {
+      const file = resolve(targetDir, item.name);
+      return {
+        type: 'live' as const,
+        source: file,
+        target: file,
+      };
+    });
+}
+
+function asBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const text = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(text)) return true;
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(text)) return false;
+  }
+  return fallback;
+}
+
+function asPositiveNumber(value: unknown, fallback: number): number {
+  const num = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function stringFromEnv(name: unknown): string | undefined {
+  const key = asString(name);
+  return key ? asString(process.env[key]) : undefined;
+}
+
+function resolveConfigString(value: unknown, envName: unknown): string | undefined {
+  return stringFromEnv(envName) || asString(value);
+}
+
+function resolveConfigUrl(value: unknown, envName: unknown): string | undefined {
+  const envValue = stringFromEnv(envName);
+  if (envValue) return envValue;
+  const direct = asString(value);
+  if (direct) return direct;
+  const envText = asString(envName);
+  return envText && /^https?:\/\//i.test(envText) ? envText : undefined;
+}
+
+function asStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (!key) continue;
+    if (item == null) continue;
+    result[key] = String(item);
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function asStringList(value: unknown): string[] | undefined {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+  const normalized = items
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function envStringList(name: string): string[] | undefined {
+  return asStringList(process.env[name]);
+}
+
+function normalizeRemotePublishTarget(item: RemotePublishTargetConfig, index: number): RemotePublishResolvedTarget | undefined {
+  const type = asString(item.type) as RemotePublishTargetType | undefined;
+  if (type !== 'webdav' && type !== 'http-post' && type !== 'http-get') return undefined;
+  const target: RemotePublishResolvedTarget = {
+    type,
+    name: asString(item.name) || `${type}-${index + 1}`,
+    enabled: asBoolean(item.enabled, true),
+    files: asStringList(item.files),
+    timeoutMs: item.timeoutMs == null ? undefined : asPositiveNumber(item.timeoutMs, 0),
+    headers: asStringRecord(item.headers),
+  };
+  if (type === 'webdav') {
+    target.baseUrl = resolveConfigUrl(item.baseUrl, item.baseUrlEnv);
+    target.username = resolveConfigString(item.username, item.usernameEnv);
+    target.password = resolveConfigString(item.password, item.passwordEnv);
+    target.remoteDir = asString(item.remoteDir) || '';
+  } else if (type === 'http-post') {
+    const mode = asString(item.mode) as RemotePostMode | undefined;
+    target.url = resolveConfigUrl(item.url, item.urlEnv);
+    target.token = resolveConfigString(item.token, item.tokenEnv);
+    target.authHeader = asString(item.authHeader) || 'Authorization';
+    target.mode = mode === 'json' || mode === 'binary' ? mode : 'multipart';
+    target.fields = asStringRecord(item.fields);
+    target.remoteDir = asString(item.remoteDir) || '';
+    target.pathParam = asString(item.pathParam) || 'path';
+    target.contentType = asString(item.contentType);
+  } else {
+    target.url = resolveConfigUrl(item.url, item.urlEnv);
+    target.token = resolveConfigString(item.token, item.tokenEnv);
+    target.authHeader = asString(item.authHeader) || 'Authorization';
+    target.fields = asStringRecord(item.fields);
+  }
+  return target;
+}
+
+function loadRemotePublishConfigFile(filePath: string): { exists: boolean; config?: RemotePublishConfigFile } {
+  const resolved = resolve(filePath);
+  if (!existsSync(resolved)) return { exists: false };
+  const parsed = JSON.parse(readFileSync(resolved, 'utf8')) as RemotePublishConfigFile;
+  return { exists: true, config: parsed };
+}
+
+function loadEnvRemoteTargets(): RemotePublishResolvedTarget[] {
+  const targets: RemotePublishResolvedTarget[] = [];
+  const webdavUrl = asString(process.env.PUBLISH_WEBDAV_URL);
+  if (webdavUrl) {
+    targets.push({
+      type: 'webdav',
+      name: asString(process.env.PUBLISH_WEBDAV_NAME) || 'env-webdav',
+      enabled: asBoolean(process.env.PUBLISH_WEBDAV_ENABLED, true),
+      files: envStringList('PUBLISH_WEBDAV_FILES'),
+      timeoutMs: asPositiveNumber(process.env.PUBLISH_WEBDAV_TIMEOUT_MS, 0) || undefined,
+      baseUrl: webdavUrl,
+      username: asString(process.env.PUBLISH_WEBDAV_USERNAME),
+      password: asString(process.env.PUBLISH_WEBDAV_PASSWORD),
+      remoteDir: asString(process.env.PUBLISH_WEBDAV_REMOTE_DIR) || '',
+    });
+  }
+  const postUrl = asString(process.env.PUBLISH_POST_URL);
+  if (postUrl) {
+    const mode = asString(process.env.PUBLISH_POST_MODE) as RemotePostMode | undefined;
+    targets.push({
+      type: 'http-post',
+      name: asString(process.env.PUBLISH_POST_NAME) || 'env-http-post',
+      enabled: asBoolean(process.env.PUBLISH_POST_ENABLED, true),
+      files: envStringList('PUBLISH_POST_FILES'),
+      timeoutMs: asPositiveNumber(process.env.PUBLISH_POST_TIMEOUT_MS, 0) || undefined,
+      url: postUrl,
+      token: asString(process.env.PUBLISH_POST_TOKEN),
+      authHeader: asString(process.env.PUBLISH_POST_AUTH_HEADER) || 'Authorization',
+      mode: mode === 'json' || mode === 'binary' ? mode : 'multipart',
+      fields: asStringRecord({
+        source: process.env.PUBLISH_POST_FIELD_SOURCE,
+        tag: process.env.PUBLISH_POST_FIELD_TAG,
+      }),
+      remoteDir: asString(process.env.PUBLISH_POST_REMOTE_DIR) || '',
+      pathParam: asString(process.env.PUBLISH_POST_PATH_PARAM) || 'path',
+      contentType: asString(process.env.PUBLISH_POST_CONTENT_TYPE),
+    });
+  }
+  const getUrl = asString(process.env.PUBLISH_GET_URL);
+  if (getUrl) {
+    targets.push({
+      type: 'http-get',
+      name: asString(process.env.PUBLISH_GET_NAME) || 'env-http-get',
+      enabled: asBoolean(process.env.PUBLISH_GET_ENABLED, true),
+      files: envStringList('PUBLISH_GET_FILES'),
+      timeoutMs: asPositiveNumber(process.env.PUBLISH_GET_TIMEOUT_MS, 0) || undefined,
+      url: getUrl,
+      token: asString(process.env.PUBLISH_GET_TOKEN),
+      authHeader: asString(process.env.PUBLISH_GET_AUTH_HEADER) || 'Authorization',
+      fields: asStringRecord({
+        source: process.env.PUBLISH_GET_FIELD_SOURCE,
+        tag: process.env.PUBLISH_GET_FIELD_TAG,
+      }),
+    });
+  }
+  return targets;
+}
+
+function loadRemotePublishConfig(args: CliArgs): RemotePublishResolvedConfig | undefined {
+  if (args.noPublishSync) return undefined;
+  const file = loadRemotePublishConfigFile(args.publishSyncConfigFile);
+  const fileConfig = file.config;
+  const fileTargets = (Array.isArray(fileConfig?.targets) ? fileConfig.targets : [])
+    .map((item, index) => normalizeRemotePublishTarget(item, index))
+    .filter((item): item is RemotePublishResolvedTarget => !!item);
+  const envTargets = loadEnvRemoteTargets();
+  const targets = [...fileTargets, ...envTargets].filter((item) => item.enabled);
+  const enabledFallback = file.exists || envTargets.length > 0;
+  const enabled = asBoolean(process.env.PUBLISH_REMOTE_ENABLED, asBoolean(fileConfig?.enabled, enabledFallback));
+  if (!enabled || targets.length === 0) return undefined;
+  return {
+    enabled,
+    failOnRemoteError: asBoolean(
+      process.env.PUBLISH_REMOTE_FAIL_ON_ERROR,
+      asBoolean(fileConfig?.failOnRemoteError, true),
+    ),
+    timeoutMs: asPositiveNumber(process.env.PUBLISH_REMOTE_TIMEOUT_MS, asPositiveNumber(fileConfig?.timeoutMs, 30000)),
+    targets,
+  };
+}
+
+function selectPublishArtifacts(
+  artifacts: PublishArtifact[],
+  target: RemotePublishResolvedTarget,
+): PublishArtifact[] {
+  if (!target.files?.length) return artifacts;
+  const wanted = new Set(target.files.map((item) => basename(item).toLowerCase()));
+  return artifacts.filter((item) => wanted.has(basename(item.target).toLowerCase()));
+}
+
+function remoteHeaders(target: RemotePublishResolvedTarget): Record<string, string> {
+  const headers = { ...(target.headers || {}) };
+  if (target.type === 'webdav' && target.username && target.password) {
+    headers.Authorization = `Basic ${Buffer.from(`${target.username}:${target.password}`).toString('base64')}`;
+  }
+  if ((target.type === 'http-post' || target.type === 'http-get') && target.token && target.authHeader) {
+    headers[target.authHeader] = `Bearer ${target.token}`;
+  }
+  return headers;
+}
+
+function joinRemoteUrl(baseUrl: string, ...segments: string[]): string {
+  const suffix = segments
+    .flatMap((segment) => segment.split('/'))
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return suffix ? `${baseUrl.replace(/\/+$/, '')}/${suffix}` : baseUrl;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureWebDavDir(target: RemotePublishResolvedTarget, headers: Record<string, string>, timeoutMs: number): Promise<void> {
+  if (!target.baseUrl || !target.remoteDir) return;
+  const parts = target.remoteDir.split('/').map((item) => item.trim()).filter(Boolean);
+  const current: string[] = [];
+  for (const part of parts) {
+    current.push(part);
+    const res = await fetchWithTimeout(joinRemoteUrl(target.baseUrl, ...current), { method: 'MKCOL', headers }, timeoutMs);
+    if (![200, 201, 204, 301, 302, 405].includes(res.status)) {
+      throw new Error(`MKCOL ${current.join('/')} failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+  }
+}
+
+function contentTypeForFile(file: string): string {
+  const ext = extname(file).toLowerCase();
+  if (ext === '.m3u' || ext === '.m3u8') return 'application/vnd.apple.mpegurl; charset=utf-8';
+  if (ext === '.txt') return 'text/plain; charset=utf-8';
+  if (ext === '.json') return 'application/json; charset=utf-8';
+  return 'application/octet-stream';
+}
+
+async function publishWebDavTarget(
+  target: RemotePublishResolvedTarget,
+  artifacts: PublishArtifact[],
+  timeoutMs: number,
+): Promise<void> {
+  if (!target.baseUrl) throw new Error('missing WebDAV baseUrl or PUBLISH_WEBDAV_URL');
+  const headers = remoteHeaders(target);
+  await ensureWebDavDir(target, headers, timeoutMs);
+  for (const artifact of artifacts) {
+    const fileName = basename(artifact.target);
+    const url = joinRemoteUrl(target.baseUrl, target.remoteDir || '', fileName);
+    const body = readFileSync(artifact.target);
+    const res = await fetchWithTimeout(url, {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'Content-Type': contentTypeForFile(fileName),
+      },
+      body,
+    }, timeoutMs);
+    if (![200, 201, 204].includes(res.status)) {
+      throw new Error(`PUT ${fileName} failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+  }
+}
+
+async function publishHttpPostTarget(
+  target: RemotePublishResolvedTarget,
+  artifacts: PublishArtifact[],
+  timeoutMs: number,
+): Promise<number> {
+  if (!target.url) throw new Error('missing POST url or PUBLISH_POST_URL');
+  const headers = remoteHeaders(target);
+  if (target.mode === 'binary') {
+    let lastStatus = 0;
+    for (const artifact of artifacts) {
+      const fileName = basename(artifact.target);
+      const url = withBinaryUploadPath(target.url, target, artifact);
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': target.contentType || contentTypeForFile(fileName),
+        },
+        body: readFileSync(artifact.target),
+      }, timeoutMs);
+      lastStatus = res.status;
+      if (!res.ok) {
+        throw new Error(`POST binary ${fileName} failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      }
+    }
+    return lastStatus;
+  }
+  if (target.mode === 'json') {
+    headers['Content-Type'] = 'application/json; charset=utf-8';
+    const body = JSON.stringify({
+      fields: target.fields || {},
+      files: artifacts.map((artifact) => {
+        const fileName = basename(artifact.target);
+        return {
+          name: fileName,
+          contentType: contentTypeForFile(fileName),
+          contentBase64: readFileSync(artifact.target).toString('base64'),
+        };
+      }),
+    });
+    const res = await fetchWithTimeout(target.url, {
+      method: 'POST',
+      headers,
+      body,
+    }, timeoutMs);
+    if (!res.ok) {
+      throw new Error(`POST failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+    return res.status;
+  }
+
+  let lastStatus = 0;
+  for (const artifact of artifacts) {
+    const fileName = basename(artifact.target);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(target.fields || {})) form.append(key, value);
+    form.append('files', new Blob([readFileSync(artifact.target)], { type: contentTypeForFile(fileName) }), fileName);
+    const res = await fetchWithTimeout(target.url, {
+      method: 'POST',
+      headers,
+      body: form,
+    }, timeoutMs);
+    lastStatus = res.status;
+    if (!res.ok) {
+      throw new Error(`POST multipart ${fileName} failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+  }
+  return lastStatus;
+}
+
+function joinRemotePath(...segments: string[]): string {
+  return segments
+    .flatMap((segment) => segment.split('/'))
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('/');
+}
+
+function withBinaryUploadPath(url: string, target: RemotePublishResolvedTarget, artifact: PublishArtifact): string {
+  const next = new URL(url);
+  for (const [key, value] of Object.entries(target.fields || {})) {
+    next.searchParams.set(key, value);
+  }
+  next.searchParams.set(target.pathParam || 'path', joinRemotePath(target.remoteDir || '', basename(artifact.target)));
+  return next.toString();
+}
+
+function withQueryFields(url: string, fields: Record<string, string> | undefined, artifacts: PublishArtifact[]): string {
+  const next = new URL(url);
+  for (const [key, value] of Object.entries(fields || {})) {
+    next.searchParams.set(key, value);
+  }
+  if (artifacts.length > 0 && !next.searchParams.has('files')) {
+    next.searchParams.set('files', artifacts.map((artifact) => basename(artifact.target)).join(','));
+  }
+  return next.toString();
+}
+
+async function publishHttpGetTarget(
+  target: RemotePublishResolvedTarget,
+  artifacts: PublishArtifact[],
+  timeoutMs: number,
+): Promise<number> {
+  if (!target.url) throw new Error('missing GET url or PUBLISH_GET_URL');
+  const res = await fetchWithTimeout(withQueryFields(target.url, target.fields, artifacts), {
+    method: 'GET',
+    headers: remoteHeaders(target),
+  }, timeoutMs);
+  if (!res.ok) {
+    throw new Error(`GET failed with HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  return res.status;
+}
+
+async function publishRemoteArtifacts(
+  artifacts: PublishArtifact[],
+  config: RemotePublishResolvedConfig | undefined,
+  onLog?: (line: string) => void,
+): Promise<RemotePublishResult[]> {
+  if (!config || artifacts.length === 0) return [];
+  const results: RemotePublishResult[] = [];
+  for (const target of config.targets) {
+    const selected = selectPublishArtifacts(artifacts, target);
+    if (selected.length === 0) continue;
+    const startedMs = Date.now();
+    const startedAt = new Date(startedMs).toISOString();
+    let status: number | undefined;
+    let error: string | undefined;
+    onLog?.(`[remote-publish:start] [type:${target.type}] [name:${target.name}] [files:${selected.length}] [target:${target.type === 'webdav' ? target.baseUrl || '-' : target.url || '-'}]`);
+    try {
+      const timeoutMs = target.timeoutMs || config.timeoutMs;
+      if (target.type === 'webdav') await publishWebDavTarget(target, selected, timeoutMs);
+      else if (target.type === 'http-post') status = await publishHttpPostTarget(target, selected, timeoutMs);
+      else status = await publishHttpGetTarget(target, selected, timeoutMs);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+    const finishedAt = new Date().toISOString();
+    results.push({
+      type: target.type,
+      name: target.name,
+      ok: !error,
+      files: selected.length,
+      status,
+      target: target.type === 'webdav' ? target.baseUrl : target.url,
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedMs,
+      error,
+    });
+    const latest = results[results.length - 1];
+    if (latest.ok) {
+      onLog?.(`[remote-publish:success] [type:${latest.type}] [name:${latest.name}] [files:${latest.files}] [duration:${formatDurationMs(latest.durationMs)}]${latest.status ? ` [status:${latest.status}]` : ''}`);
+    } else {
+      onLog?.(`[remote-publish:failed] [type:${latest.type}] [name:${latest.name}] [files:${latest.files}] [duration:${formatDurationMs(latest.durationMs)}] [error:${latest.error || '-'}]`);
+    }
+  }
+  return results;
+}
+
+async function runPublishSyncOnly(args: CliArgs): Promise<void> {
+  const remotePublishConfig = loadRemotePublishConfig(args);
+  if (!remotePublishConfig) {
+    throw new Error(`Publish sync config is disabled or empty. Check ${resolve(args.publishSyncConfigFile)}.`);
+  }
+  const artifacts = buildPublishDirArtifacts();
+  if (artifacts.length === 0) {
+    throw new Error(`No files found under ${resolve(DEFAULT_PUBLISH_DIR)}.`);
+  }
+  if (!args.quiet) {
+    cliLog(`[publish-sync] [dir:${resolve(DEFAULT_PUBLISH_DIR)}] [files:${artifacts.length}] [config:${resolve(args.publishSyncConfigFile)}]`);
+  }
+  const results = await publishRemoteArtifacts(artifacts, remotePublishConfig, (line) => {
+    if (!args.quiet) cliLog(line);
+    else writeRuntimeLog(`${logTimestamp()} ${line}`);
+  });
+  for (const item of results) {
+    if (!args.quiet) {
+      cliLog(`[remote-publish:${item.type}] [name:${item.name}] [files:${item.files}] [ok:${item.ok}]${item.status ? ` [status:${item.status}]` : ''}${item.error ? ` [error:${item.error}]` : ''}`);
+    }
+  }
+  flushRuntimeLog();
+  if (remotePublishConfig.failOnRemoteError && results.some((item) => !item.ok)) {
+    throw new Error('Remote publish failed. Check runtime log for details.');
+  }
 }
 
 function pct(numerator: number, denominator: number): number {
@@ -3243,6 +3798,10 @@ async function main(): Promise<void> {
     return;
   }
   configureRuntimeLog(args, argv);
+  if (args.publishSyncOnly) {
+    await runPublishSyncOnly(args);
+    return;
+  }
   if (args.initDefaultSources) {
     ensureDefaultSourceFile(DEFAULT_INPUT_PATH);
     cliLog(`[ready:sources] [file:${DEFAULT_INPUT_PATH}]`);
@@ -3418,6 +3977,16 @@ async function main(): Promise<void> {
   const publishedArtifacts = shouldPublishOutput(outputResult, args)
     ? publishMatchedOutput(liveExports)
     : [];
+  const remotePublishConfig = loadRemotePublishConfig(args);
+  const remotePublishResults = await publishRemoteArtifacts(publishedArtifacts, remotePublishConfig, (line) => {
+    if (!args.quiet) cliLog(line);
+    else writeRuntimeLog(`${logTimestamp()} ${line}`);
+  });
+  const remotePublishFailed = remotePublishConfig?.failOnRemoteError && remotePublishResults.some((item) => !item.ok);
+  if (remotePublishResults.length > 0 && outputResult.output) {
+    outputResult.output.remotePublish = remotePublishResults;
+    writeFileSync(out, args.compact ? JSON.stringify(outputResult) : JSON.stringify(outputResult, null, 2), 'utf8');
+  }
   if (!args.quiet) {
     cliLog(`[wrote:json] [file:${out}]`);
     if (sourceStatsOut) cliLog(`[wrote:md] [type:source-stats] [file:${sourceStatsOut}]`);
@@ -3431,9 +4000,15 @@ async function main(): Promise<void> {
         cliLog(`[publish:copy] [type:${item.type}] [from:${item.source}] [to:${item.target}]`);
       }
     }
+    for (const item of remotePublishResults) {
+      cliLog(`[remote-publish:${item.type}] [name:${item.name}] [files:${item.files}] [ok:${item.ok}]${item.status ? ` [status:${item.status}]` : ''}${item.error ? ` [error:${item.error}]` : ''}`);
+    }
     cliLog(`[output] [entries:${outputResult.entries.length}/${result.entries.length}]`);
   }
   flushRuntimeLog();
+  if (remotePublishFailed) {
+    throw new Error('Remote publish failed. Check output.remotePublish or runtime log for details.');
+  }
 }
 
 main().catch((err: unknown) => {

@@ -193,6 +193,18 @@ export interface IptvPickerCoreFileResult {
       sourceStats?: string;
       channelStats?: string;
     };
+    remotePublish?: Array<{
+      type: 'webdav' | 'http-post' | 'http-get';
+      name: string;
+      ok: boolean;
+      files: number;
+      status?: number;
+      target?: string;
+      startedAt: string;
+      finishedAt: string;
+      durationMs: number;
+      error?: string;
+    }>;
     channelCuration?: ChannelCurationSummary;
     channelCurationPreset?: string;
     channelCurationKeepPerChannel?: number;
