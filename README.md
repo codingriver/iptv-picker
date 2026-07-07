@@ -44,6 +44,12 @@ Linux  : ~/.cache/iptv-picker/bin/ffprobe/<platform-arch-hash>/ffprobe
 npm run package:sea
 ```
 
+也可以通过环境变量指定目标架构。Node 的 32 位架构名是 `ia32`，发布包命名仍使用更常见的 `x86`：
+
+```bash
+TARGET_ARCH=x86 npm run package:sea
+```
+
 Windows 也保留了兼容短命令：
 
 ```powershell
@@ -61,16 +67,26 @@ npm run package:win
 
 ```text
 release/windows-x64/iptv-picker.exe
+release/windows-x86/iptv-picker.exe
 ```
 
 推送 `*.*.*` 或 `v*.*.*` 标签时，GitHub Actions 会自动生成并上传：
 
 ```text
 iptv-picker-windows-x64.zip
+iptv-picker-windows-x86.zip
 iptv-picker-linux-x64.tar.gz
 iptv-picker-macos-x64.tar.gz
 iptv-picker-macos-arm64.tar.gz
 *.sha256
+```
+
+说明：
+
+```text
+Windows x64 / Linux x64 / macOS x64 / macOS arm64 默认内嵌 ffprobe
+Windows x86 默认不内嵌 ffprobe，会走外部 ffprobe 或 no-ffmpeg 降级
+Linux/macOS 不发布 x86 版本
 ```
 
 使用：

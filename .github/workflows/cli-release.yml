@@ -23,24 +23,60 @@ jobs:
             target: windows-x64
             archive: iptv-picker-windows-x64.zip
             executable: iptv-picker.exe
+            nodeVersion: 24
+            nodeArchitecture: x64
+            targetPlatform: win32
+            targetArch: x64
+            bundleFfprobe: true
+            allowMissingFfprobe: false
             installFfmpeg: choco install ffmpeg -y --no-progress
+          - label: Windows x86
+            os: windows-latest
+            target: windows-x86
+            archive: iptv-picker-windows-x86.zip
+            executable: iptv-picker.exe
+            nodeVersion: 22
+            nodeArchitecture: x86
+            targetPlatform: win32
+            targetArch: x86
+            bundleFfprobe: false
+            allowMissingFfprobe: true
+            installFfmpeg: ""
           - label: Linux x64
             os: ubuntu-latest
             target: linux-x64
             archive: iptv-picker-linux-x64.tar.gz
             executable: iptv-picker
+            nodeVersion: 24
+            nodeArchitecture: x64
+            targetPlatform: linux
+            targetArch: x64
+            bundleFfprobe: true
+            allowMissingFfprobe: false
             installFfmpeg: sudo apt-get update && sudo apt-get install -y ffmpeg
           - label: macOS x64
             os: macos-15-intel
             target: macos-x64
             archive: iptv-picker-macos-x64.tar.gz
             executable: iptv-picker
+            nodeVersion: 24
+            nodeArchitecture: x64
+            targetPlatform: darwin
+            targetArch: x64
+            bundleFfprobe: true
+            allowMissingFfprobe: false
             installFfmpeg: brew install ffmpeg
           - label: macOS arm64
             os: macos-14
             target: macos-arm64
             archive: iptv-picker-macos-arm64.tar.gz
             executable: iptv-picker
+            nodeVersion: 24
+            nodeArchitecture: arm64
+            targetPlatform: darwin
+            targetArch: arm64
+            bundleFfprobe: true
+            allowMissingFfprobe: false
             installFfmpeg: brew install ffmpeg
 
     steps:
@@ -50,16 +86,23 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.nodeVersion }}
+          architecture: ${{ matrix.nodeArchitecture }}
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Install FFmpeg
+        if: matrix.installFfmpeg != ''
         run: ${{ matrix.installFfmpeg }}
 
       - name: Build single executable
+        env:
+          TARGET_PLATFORM: ${{ matrix.targetPlatform }}
+          TARGET_ARCH: ${{ matrix.targetArch }}
+          BUNDLE_FFPROBE: ${{ matrix.bundleFfprobe }}
+          ALLOW_MISSING_FFPROBE: ${{ matrix.allowMissingFfprobe }}
         run: npm run package:sea
 
       - name: Pack Windows release
