@@ -87,6 +87,7 @@ interface CliArgs {
   checkRetry: number;
   checkMode: IptvPickerCoreCheckMode;
   requireFfmpeg: boolean;
+  ffprobePath?: string;
   preflight: boolean;
   preflightTimeoutMs: number;
   hostTimeoutLimit: number;
@@ -104,6 +105,7 @@ interface CliArgs {
     checkRetry?: boolean;
     checkMode?: boolean;
     requireFfmpeg?: boolean;
+    ffprobePath?: boolean;
     preflight?: boolean;
     preflightTimeoutMs?: boolean;
     hostTimeoutLimit?: boolean;
@@ -1293,6 +1295,7 @@ function usage(): string {
     `  --check-timeout-ms <n>       per playback URL check timeout, default: ${DEFAULT_CHECK_TIMEOUT_MS}`,
     `  --check-retry <n>            per playback URL retry count, default: ${DEFAULT_CHECK_RETRY}`,
     `  --check-mode <mode>          full|fast, default: ${DEFAULT_CHECK_MODE}`,
+    `  --ffprobe-path <file>        use a specific ffprobe binary, or set FFPROBE_PATH`,
     `  --require-ffmpeg             fail when ffprobe is missing instead of falling back to no-ffmpeg mode`,
     `  --preflight                  enable HTTP header preflight before playback checks`,
     `  --no-preflight               disable HTTP header preflight`,
@@ -1479,6 +1482,9 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (item === '--require-ffmpeg') {
       args.requireFfmpeg = true;
       args.runtimeCliOverrides = { ...args.runtimeCliOverrides, requireFfmpeg: true };
+    } else if (item === '--ffprobe-path') {
+      args.ffprobePath = argv[++i];
+      args.runtimeCliOverrides = { ...args.runtimeCliOverrides, ffprobePath: true };
     } else if (item === '--preflight') {
       args.preflight = true;
       args.runtimeCliOverrides = { ...args.runtimeCliOverrides, preflight: true };
@@ -1824,7 +1830,7 @@ async function promptCliArgs(
   console.log('  report: -');
   console.log(`  markdown: ${next.noMdReports ? '-' : `${next.sourceStatsOut || deriveSourceStatsReportPath(next.out)}, ${next.channelStatsOut || deriveChannelStatsReportPath(next.out)}`}`);
   console.log(`  filters: status=${next.status}, source=${next.source || '-'}, group=${next.group || '-'}, channel=${next.channel || '-'}, errorCode=${next.errorCode || '-'}, minHeight=${next.minHeight ?? '-'}`);
-  console.log(`  runtime: pipelineMode=${next.pipelineMode}, checkMode=${next.checkMode}, requireFfmpeg=${next.requireFfmpeg}, preflight=${next.preflight}, preflightTimeoutMs=${next.preflightTimeoutMs}, hostTimeoutLimit=${next.hostTimeoutLimit}, downloadTimeoutMs=${next.downloadTimeoutMs}, checkTimeoutMs=${next.checkTimeoutMs}, checkRetry=${next.checkRetry}, sourceParallel=${next.sourceParallel}, preflightParallel=${next.preflightParallel}, preflightHostParallel=${next.preflightHostParallel}, checkParallel=${next.checkParallel}, checkHostParallel=${next.checkHostParallel}, preflightOut=${next.preflightOut}, resumePreflight=${next.resumePreflight || '-'}`);
+  console.log(`  runtime: pipelineMode=${next.pipelineMode}, checkMode=${next.checkMode}, ffprobePath=${next.ffprobePath || process.env.FFPROBE_PATH || '-'}, requireFfmpeg=${next.requireFfmpeg}, preflight=${next.preflight}, preflightTimeoutMs=${next.preflightTimeoutMs}, hostTimeoutLimit=${next.hostTimeoutLimit}, downloadTimeoutMs=${next.downloadTimeoutMs}, checkTimeoutMs=${next.checkTimeoutMs}, checkRetry=${next.checkRetry}, sourceParallel=${next.sourceParallel}, preflightParallel=${next.preflightParallel}, preflightHostParallel=${next.preflightHostParallel}, checkParallel=${next.checkParallel}, checkHostParallel=${next.checkHostParallel}, preflightOut=${next.preflightOut}, resumePreflight=${next.resumePreflight || '-'}`);
   console.log(`  entry sort: ${next.sort} ${next.sort === 'default' ? '(fixed)' : next.sortDir}`);
   console.log(`  report sort: ${next.reportSort} ${next.reportSort === 'default' ? '(fixed)' : next.reportSortDir}`);
   console.log('');
@@ -3008,6 +3014,8 @@ function applyOutputOptions(
         checkMode: args.checkMode,
         requireFfmpeg: args.requireFfmpeg,
         ffprobeAvailable: result.runtime?.ffprobeAvailable,
+        ffprobePath: result.runtime?.ffprobePath,
+        ffprobeSource: result.runtime?.ffprobeSource,
         noFfmpegMode: result.runtime?.noFfmpegMode,
         playbackValidation: result.runtime?.playbackValidation,
         preflight: args.preflight,
@@ -3331,7 +3339,7 @@ function buildTextReport(
   lines.push(`状态=${args.status}, 来源=${args.source || '-'}, 分组=${args.group || '-'}, 频道=${args.channel || '-'}, 错误码=${args.errorCode || '-'}, 最低高度=${args.minHeight ?? '-'}`);
   lines.push(`明细排序=${args.sort}, 明细排序方向=${args.sortDir}, 源级排序=${args.reportSort}, 源级排序方向=${args.reportSortDir}`);
   lines.push(`频道收口=规则 ${args.curationPreset}, 每频道保留 ${args.curationKeepPerChannel ?? '-'}, 优选高度 ${args.curationPreferredMinHeight ?? '-'}, 兜底高度 ${args.curationFallbackMinHeight ?? '-'}, 低清兜底 ${args.curationAllowLowResFallback}, 检测前过滤 ${args.curationPreFilter}, 保留未匹配 ${args.curationIncludeUnmatched}, 包含失败 ${args.curationIncludeFailed}`);
-  lines.push(`运行参数=流水线 ${args.pipelineMode}, 检测模式 ${args.checkMode}, 强制ffmpeg ${args.requireFfmpeg}, HTTP预检 ${args.preflight}, 预检超时 ${args.preflightTimeoutMs}ms, Host超时阈值 ${args.hostTimeoutLimit}, 源下载超时 ${args.downloadTimeoutMs}ms, URL检测超时 ${args.checkTimeoutMs}ms, URL重试 ${args.checkRetry}, 直播源并发 ${args.sourceParallel}, 预检并发 ${args.preflightParallel}, 同Host预检并发 ${args.preflightHostParallel}, URL检测并发 ${args.checkParallel}, 同Host检测并发 ${args.checkHostParallel}, 预检检查点 ${args.preflightOut}, 恢复预检 ${args.resumePreflight || '-'}`);
+  lines.push(`运行参数=流水线 ${args.pipelineMode}, 检测模式 ${args.checkMode}, ffprobe ${outputResult.output?.runtime?.ffprobeSource || '-'} ${outputResult.output?.runtime?.ffprobePath || '-'}, 强制ffmpeg ${args.requireFfmpeg}, HTTP预检 ${args.preflight}, 预检超时 ${args.preflightTimeoutMs}ms, Host超时阈值 ${args.hostTimeoutLimit}, 源下载超时 ${args.downloadTimeoutMs}ms, URL检测超时 ${args.checkTimeoutMs}ms, URL重试 ${args.checkRetry}, 直播源并发 ${args.sourceParallel}, 预检并发 ${args.preflightParallel}, 同Host预检并发 ${args.preflightHostParallel}, URL检测并发 ${args.checkParallel}, 同Host检测并发 ${args.checkHostParallel}, 预检检查点 ${args.preflightOut}, 恢复预检 ${args.resumePreflight || '-'}`);
   lines.push(`紧凑 JSON=${args.compact}, 静默模式=${args.quiet}`);
   lines.push('');
 
@@ -3899,7 +3907,7 @@ async function main(): Promise<void> {
   const channelStatsOut = args.noMdReports ? undefined : resolve(args.channelStatsOut || deriveChannelStatsReportPath(args.out));
   const outputPaths = { out, sourceStatsOut, channelStatsOut };
   debugLog(`[output] [out:${out}] [report:${reportOut || '-'}] [sourceStats:${sourceStatsOut || '-'}] [channelStats:${channelStatsOut || '-'}] [live:${args.exportLive || '-'}] [strategy:${args.strategy || '-'}] [curation:${args.curationPreset}] [keep:${args.curationKeepPerChannel ?? '-'}] [preferredHeight:${args.curationPreferredMinHeight ?? '-'}] [fallbackHeight:${args.curationFallbackMinHeight ?? '-'}] [lowResFallback:${args.curationAllowLowResFallback}] [preFilter:${args.curationPreFilter}] [includeUnmatched:${args.curationIncludeUnmatched}] [includeFailed:${args.curationIncludeFailed}]`);
-  debugLog(`[runtime] [pipelineMode:${args.pipelineMode}] [checkMode:${args.checkMode}] [requireFfmpeg:${args.requireFfmpeg}] [preflight:${args.preflight}] [preflightTimeoutMs:${args.preflightTimeoutMs}] [hostTimeoutLimit:${args.hostTimeoutLimit}] [downloadTimeoutMs:${args.downloadTimeoutMs}] [checkTimeoutMs:${args.checkTimeoutMs}] [checkRetry:${args.checkRetry}] [sourceParallel:${args.sourceParallel}] [preflightParallel:${args.preflightParallel}] [preflightHostParallel:${args.preflightHostParallel}] [checkParallel:${args.checkParallel}] [checkHostParallel:${args.checkHostParallel}] [preflightOut:${args.preflightOut}] [resumePreflight:${args.resumePreflight || '-'}]`);
+  debugLog(`[runtime] [pipelineMode:${args.pipelineMode}] [checkMode:${args.checkMode}] [ffprobePath:${args.ffprobePath || process.env.FFPROBE_PATH || '-'}] [requireFfmpeg:${args.requireFfmpeg}] [preflight:${args.preflight}] [preflightTimeoutMs:${args.preflightTimeoutMs}] [hostTimeoutLimit:${args.hostTimeoutLimit}] [downloadTimeoutMs:${args.downloadTimeoutMs}] [checkTimeoutMs:${args.checkTimeoutMs}] [checkRetry:${args.checkRetry}] [sourceParallel:${args.sourceParallel}] [preflightParallel:${args.preflightParallel}] [preflightHostParallel:${args.preflightHostParallel}] [checkParallel:${args.checkParallel}] [checkHostParallel:${args.checkHostParallel}] [preflightOut:${args.preflightOut}] [resumePreflight:${args.resumePreflight || '-'}]`);
   if (!args.noProgressOutput) {
     writeRunningPlaceholders(args, outputPaths);
     debugLog(`[progress-output] [json:${deriveRunningPath(out)}] [live:${args.exportLive ? liveExportBasePath(deriveRunningPath(args.exportLive)) + '.{m3u,txt,json}' : '-'}]`);
@@ -3935,6 +3943,7 @@ async function main(): Promise<void> {
     checkRetry: args.checkRetry,
     checkMode: args.checkMode,
     requireFfmpeg: args.requireFfmpeg,
+    ffprobePath: args.ffprobePath,
     preflight: args.preflight,
     preflightTimeoutMs: args.preflightTimeoutMs,
     hostTimeoutLimit: args.hostTimeoutLimit,

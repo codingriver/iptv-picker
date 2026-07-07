@@ -13,6 +13,9 @@
     "setup": "npm install && npm run build",
     "build": "node scripts/build.js",
     "build:node": "node scripts/build.js",
+    "package:sea": "node scripts/package-sea.js",
+    "package:win": "node scripts/package-windows-sea.js",
+    "package:ffprobe:stub": "node scripts/prepare-bundled-ffprobe.js --stub",
     "docker:build": "docker build -t iptv-picker .",
     "docker:help": "docker run --rm iptv-picker --help",
     "picker": "node dist/iptv-picker-cli.js",
@@ -54,6 +57,7 @@
     "@types/node": "^22.0.0",
     "esbuild": "^0.24.0",
     "playwright-core": "^1.60.0",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^5.7.0"
   },
   "repository": {

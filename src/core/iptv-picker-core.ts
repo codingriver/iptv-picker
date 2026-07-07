@@ -1,9 +1,11 @@
 import { execFile, spawn } from 'child_process';
 import { createHash } from 'crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { createRequire } from 'module';
-import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { gunzipSync } from 'zlib';
+import { homedir, tmpdir } from 'os';
+import { dirname, join, resolve } from 'path';
 import { promisify } from 'util';
 import type {
   IptvPickerCoreChannelEntry,
@@ -15,6 +17,7 @@ import type {
 } from './types';
 import { githubRequestUrls, TVBOX_UA } from './config';
 import { createChannelNameMatcher } from './channel-curation';
+import { getBundledFfprobeAsset } from './bundled-ffprobe';
 
 export interface IptvPickerCoreInputSource {
   name: string;
@@ -32,6 +35,7 @@ export interface IptvPickerCoreRuntimeOptions {
   checkRetry?: number;
   checkMode?: IptvPickerCoreCheckMode;
   requireFfmpeg?: boolean;
+  ffprobePath?: string;
   preflight?: boolean;
   preflightTimeoutMs?: number;
   hostTimeoutLimit?: number;
@@ -64,13 +68,15 @@ export interface IptvPickerCoreDetailLogEvent {
   fields: Record<string, string | number | boolean | null | undefined>;
 }
 
-type NormalizedIptvPickerCoreRuntimeOptions = Omit<Required<IptvPickerCoreRuntimeOptions>, 'preCheckCuration' | 'onDetailLog' | 'preflightCheckpointPath' | 'resumePreflightPath'> & {
+type NormalizedIptvPickerCoreRuntimeOptions = Omit<Required<IptvPickerCoreRuntimeOptions>, 'preCheckCuration' | 'onDetailLog' | 'preflightCheckpointPath' | 'resumePreflightPath' | 'ffprobePath'> & {
   preCheckCuration?: IptvPickerCoreRuntimeOptions['preCheckCuration'];
   onDetailLog?: IptvPickerCoreRuntimeOptions['onDetailLog'];
   preflightCheckpointPath?: string;
   resumePreflightPath?: string;
+  ffprobePath?: string;
   preflightHostState: Map<string, { timeoutCount: number; blocked: boolean }>;
   ffprobeAvailable: boolean;
+  ffprobeSource?: 'env' | 'bundled' | 'local-bin' | 'path';
   noFfmpegMode: boolean;
 };
 
@@ -79,6 +85,8 @@ export interface IptvPickerCoreFileResult {
   runtime?: {
     nodeSupported: boolean;
     ffprobeAvailable: boolean;
+    ffprobePath?: string;
+    ffprobeSource?: 'env' | 'bundled' | 'local-bin' | 'path';
     noFfmpegMode: boolean;
     requireFfmpeg: boolean;
     checkMode: IptvPickerCoreCheckMode;
@@ -176,6 +184,8 @@ export interface IptvPickerCoreFileResult {
       checkMode: IptvPickerCoreCheckMode;
       requireFfmpeg?: boolean;
       ffprobeAvailable?: boolean;
+      ffprobePath?: string;
+      ffprobeSource?: 'env' | 'bundled' | 'local-bin' | 'path';
       noFfmpegMode?: boolean;
       playbackValidation?: 'ffmpeg' | 'no-ffmpeg';
       preflight: boolean;
@@ -373,24 +383,121 @@ function nodeSupported(): boolean {
 
 function commandExists(command: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = process.platform === 'win32'
-      ? spawn(`${command} -version`, { stdio: 'ignore', shell: true })
-      : spawn(command, ['-version'], { stdio: 'ignore' });
+    const child = spawn(command, ['-version'], { stdio: 'ignore', windowsHide: true });
     child.once('error', () => resolve(false));
     child.once('close', (code) => resolve(code === 0));
   });
 }
 
-export async function getIptvPickerCoreRuntime(): Promise<{
+function executableName(base: string): string {
+  return process.platform === 'win32' ? `${base}.exe` : base;
+}
+
+function pathDelimiter(): string {
+  return process.platform === 'win32' ? ';' : ':';
+}
+
+function prependProcessPath(dir: string): void {
+  const key = process.platform === 'win32' ? 'Path' : 'PATH';
+  const envKey = Object.keys(process.env).find((item) => item.toLowerCase() === key.toLowerCase()) || key;
+  const current = process.env[envKey] || '';
+  const parts = current.split(pathDelimiter()).filter(Boolean);
+  if (!parts.some((item) => item.toLowerCase() === dir.toLowerCase())) {
+    process.env[envKey] = [dir, ...parts].join(pathDelimiter());
+  }
+}
+
+function bundledCacheRoot(): string {
+  if (process.platform === 'win32') {
+    return process.env.LOCALAPPDATA || process.env.APPDATA || join(homedir(), 'AppData', 'Local');
+  }
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Caches');
+  return process.env.XDG_CACHE_HOME || join(homedir(), '.cache');
+}
+
+function ensureBundledFfprobe(): string | undefined {
+  const asset = getBundledFfprobeAsset();
+  if (!asset) return undefined;
+  if (asset.platform !== process.platform || asset.arch !== process.arch) return undefined;
+  const versionKey = asset.sha256.slice(0, 16);
+  const dir = join(bundledCacheRoot(), 'iptv-picker', 'bin', 'ffprobe', `${asset.platform}-${asset.arch}-${versionKey}`);
+  const file = join(dir, asset.filename || executableName('ffprobe'));
+  try {
+    if (existsSync(file)) {
+      const current = createHash('sha256').update(readFileSync(file)).digest('hex');
+      if (current === asset.sha256) return file;
+    }
+    mkdirSync(dir, { recursive: true });
+    const bytes = gunzipSync(Buffer.from(asset.gzipBase64, 'base64'));
+    const actualSha = createHash('sha256').update(bytes).digest('hex');
+    if (actualSha !== asset.sha256) throw new Error(`Bundled ffprobe sha256 mismatch: ${actualSha}`);
+    writeFileSync(file, bytes);
+    if (process.platform !== 'win32') chmodSync(file, 0o755);
+    return file;
+  } catch {
+    return undefined;
+  }
+}
+
+function localFfprobeCandidates(): string[] {
+  const name = executableName('ffprobe');
+  const candidates = [
+    join(process.cwd(), 'bin', name),
+    join(process.cwd(), name),
+  ];
+  const executableDir = dirname(process.execPath);
+  candidates.push(join(executableDir, 'bin', name), join(executableDir, name));
+  if (process.argv[1]) {
+    const scriptDir = dirname(resolve(process.argv[1]));
+    candidates.push(join(scriptDir, 'bin', name), join(scriptDir, name));
+  }
+  return Array.from(new Set(candidates));
+}
+
+async function resolveFfprobe(options: { ffprobePath?: string } = {}): Promise<{
+  available: boolean;
+  path?: string;
+  source?: 'env' | 'bundled' | 'local-bin' | 'path';
+}> {
+  const requested = options.ffprobePath || process.env.FFPROBE_PATH;
+  if (requested && await commandExists(requested)) {
+    prependProcessPath(dirname(resolve(requested)));
+    return { available: true, path: requested, source: 'env' };
+  }
+
+  const bundled = ensureBundledFfprobe();
+  if (bundled && await commandExists(bundled)) {
+    prependProcessPath(dirname(bundled));
+    return { available: true, path: bundled, source: 'bundled' };
+  }
+
+  for (const candidate of localFfprobeCandidates()) {
+    if (existsSync(candidate) && await commandExists(candidate)) {
+      prependProcessPath(dirname(candidate));
+      return { available: true, path: candidate, source: 'local-bin' };
+    }
+  }
+
+  if (await commandExists('ffprobe')) {
+    return { available: true, path: 'ffprobe', source: 'path' };
+  }
+  return { available: false };
+}
+
+export async function getIptvPickerCoreRuntime(options: { ffprobePath?: string } = {}): Promise<{
   enabled: boolean;
   ffprobeAvailable: boolean;
+  ffprobePath?: string;
+  ffprobeSource?: 'env' | 'bundled' | 'local-bin' | 'path';
   nodeSupported: boolean;
 }> {
   const supported = nodeSupported();
-  const ffprobeAvailable = await commandExists('ffprobe');
+  const ffprobe = await resolveFfprobe(options);
   return {
     enabled: supported,
-    ffprobeAvailable,
+    ffprobeAvailable: ffprobe.available,
+    ffprobePath: ffprobe.path,
+    ffprobeSource: ffprobe.source,
     nodeSupported: supported,
   };
 }
@@ -765,6 +872,7 @@ function normalizeRuntimeOptions(options: IptvPickerCoreRuntimeOptions = {}): No
       : DEFAULT_CHECK_RETRY,
     checkMode: options.checkMode ?? DEFAULT_CHECK_MODE,
     requireFfmpeg: options.requireFfmpeg ?? false,
+    ffprobePath: options.ffprobePath,
     preflight: options.preflight ?? DEFAULT_PREFLIGHT,
     preflightTimeoutMs: positiveIntegerOrDefault(options.preflightTimeoutMs, DEFAULT_PREFLIGHT_TIMEOUT_MS),
     hostTimeoutLimit: positiveIntegerOrDefault(options.hostTimeoutLimit, DEFAULT_HOST_TIMEOUT_LIMIT),
@@ -780,6 +888,7 @@ function normalizeRuntimeOptions(options: IptvPickerCoreRuntimeOptions = {}): No
     onDetailLog: options.onDetailLog,
     preflightHostState: new Map(),
     ffprobeAvailable: true,
+    ffprobeSource: undefined,
     noFfmpegMode: false,
   };
 }
@@ -1121,7 +1230,7 @@ async function checkFastItem(
 ): Promise<CheckedPlaylistItem> {
   for (let attempt = 0; attempt <= options.checkRetry; attempt++) {
     try {
-      const { stdout } = await execFileAsync('ffprobe', ffprobeArgs(item.url, options), {
+      const { stdout } = await execFileAsync(options.ffprobePath || 'ffprobe', ffprobeArgs(item.url, options), {
         timeout: options.checkTimeoutMs,
         windowsHide: true,
         maxBuffer: 1024 * 1024,
@@ -1885,7 +1994,7 @@ async function runStageDownloadAndLint(
       durationMs: download.durationMs,
     });
 
-    if (item.contentIsM3u) {
+    if (item.contentIsM3u && options.checkMode !== 'fast') {
       const lintStart = Date.now();
       item.lintErrors = await lintM3u(download.content);
       item.timing.lintMs = Date.now() - lintStart;
@@ -2086,6 +2195,8 @@ function buildResultFromStageItems(
     runtime: {
       nodeSupported: true,
       ffprobeAvailable: options.ffprobeAvailable,
+      ffprobePath: options.ffprobePath,
+      ffprobeSource: options.ffprobeSource,
       noFfmpegMode: options.noFfmpegMode,
       requireFfmpeg: options.requireFfmpeg,
       checkMode: options.checkMode,
@@ -2250,8 +2361,10 @@ export async function checkIptvPickerCoreSources(
   options?: IptvPickerCoreRuntimeOptions,
 ): Promise<IptvPickerCoreFileResult> {
   const runtimeOptions = normalizeRuntimeOptions(options);
-  const runtime = await getIptvPickerCoreRuntime();
+  const runtime = await getIptvPickerCoreRuntime({ ffprobePath: runtimeOptions.ffprobePath });
   runtimeOptions.ffprobeAvailable = runtime.ffprobeAvailable;
+  runtimeOptions.ffprobePath = runtime.ffprobePath;
+  runtimeOptions.ffprobeSource = runtime.ffprobeSource;
   runtimeOptions.noFfmpegMode = !runtime.ffprobeAvailable;
   if (!runtime.nodeSupported) {
     throw new Error('Node.js >= 22.12.0 is required by iptv-checker.');
@@ -2328,6 +2441,8 @@ export async function checkIptvPickerCoreSources(
     runtime: {
       nodeSupported: runtime.nodeSupported,
       ffprobeAvailable: runtime.ffprobeAvailable,
+      ffprobePath: runtime.ffprobePath,
+      ffprobeSource: runtime.ffprobeSource,
       noFfmpegMode: runtimeOptions.noFfmpegMode,
       requireFfmpeg: runtimeOptions.requireFfmpeg,
       checkMode: runtimeOptions.checkMode,

@@ -2,6 +2,8 @@
 .github
 node_modules
 dist
+release
+.tmp
 coverage
 *.tsbuildinfo
 

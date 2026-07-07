@@ -28,6 +28,77 @@ npm run build
 npm run setup
 ```
 
+## 单文件命令行发布包
+
+可以把主 CLI 和目标平台的 `ffprobe` 打成一个 `iptv-picker` 可执行文件。打包时会把 `ffprobe` 压缩嵌入可执行文件；首次运行时自动释放到本机缓存目录并复用：
+
+```text
+Windows: %LOCALAPPDATA%\iptv-picker\bin\ffprobe\<platform-arch-hash>\ffprobe.exe
+macOS  : ~/Library/Caches/iptv-picker/bin/ffprobe/<platform-arch-hash>/ffprobe
+Linux  : ~/.cache/iptv-picker/bin/ffprobe/<platform-arch-hash>/ffprobe
+```
+
+本机 PATH 中已有目标平台 `ffprobe` 时，可以为当前系统直接打包：
+
+```bash
+npm run package:sea
+```
+
+Windows 也保留了兼容短命令：
+
+```powershell
+npm run package:win
+```
+
+或者显式指定 `ffprobe`：
+
+```powershell
+$env:FFPROBE_EXE = "C:\Soft\ffmpeg\bin\ffprobe.exe"
+npm run package:win
+```
+
+输出文件：
+
+```text
+release/windows-x64/iptv-picker.exe
+```
+
+推送 `*.*.*` 或 `v*.*.*` 标签时，GitHub Actions 会自动生成并上传：
+
+```text
+iptv-picker-windows-x64.zip
+iptv-picker-linux-x64.tar.gz
+iptv-picker-macos-x64.tar.gz
+iptv-picker-macos-arm64.tar.gz
+*.sha256
+```
+
+使用：
+
+```powershell
+.\release\windows-x64\iptv-picker.exe --st fast --preset cn-full
+.\release\windows-x64\iptv-picker.exe sync
+```
+
+Linux/macOS：
+
+```bash
+./iptv-picker --st fast --preset cn-full
+./iptv-picker sync
+```
+
+运行时 ffprobe 查找顺序：
+
+```text
+FFPROBE_PATH -> 内嵌 ffprobe 缓存 -> 当前目录/bin/ffprobe -> 系统 PATH -> no-ffmpeg 降级
+```
+
+如果需要强制缺少 ffprobe 时失败：
+
+```powershell
+.\release\windows-x64\iptv-picker.exe --st fast --preset cn-full --require-ffmpeg
+```
+
 ## 快速开始
 
 1. 同步订阅源到 `data/source.json`
