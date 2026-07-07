@@ -27,6 +27,7 @@ jobs:
             nodeArchitecture: x64
             targetPlatform: win32
             targetArch: x64
+            packageMode: sea
             bundleFfprobe: true
             allowMissingFfprobe: false
             installFfmpeg: choco install ffmpeg -y --no-progress
@@ -39,6 +40,7 @@ jobs:
             nodeArchitecture: x86
             targetPlatform: win32
             targetArch: x86
+            packageMode: sea
             bundleFfprobe: false
             allowMissingFfprobe: true
             installFfmpeg: ""
@@ -51,9 +53,23 @@ jobs:
             nodeArchitecture: x64
             targetPlatform: linux
             targetArch: x64
+            packageMode: sea
             bundleFfprobe: true
             allowMissingFfprobe: false
             installFfmpeg: sudo apt-get update && sudo apt-get install -y ffmpeg
+          - label: Linux x86
+            os: ubuntu-latest
+            target: linux-x86
+            archive: iptv-picker-linux-x86.tar.gz
+            executable: iptv-picker
+            nodeVersion: 24
+            nodeArchitecture: x64
+            targetPlatform: linux
+            targetArch: x86
+            packageMode: node-bundle
+            bundleFfprobe: false
+            allowMissingFfprobe: true
+            installFfmpeg: ""
           - label: macOS x64
             os: macos-15-intel
             target: macos-x64
@@ -63,6 +79,7 @@ jobs:
             nodeArchitecture: x64
             targetPlatform: darwin
             targetArch: x64
+            packageMode: sea
             bundleFfprobe: true
             allowMissingFfprobe: false
             installFfmpeg: brew install ffmpeg
@@ -75,6 +92,7 @@ jobs:
             nodeArchitecture: arm64
             targetPlatform: darwin
             targetArch: arm64
+            packageMode: sea
             bundleFfprobe: true
             allowMissingFfprobe: false
             installFfmpeg: brew install ffmpeg
@@ -98,12 +116,32 @@ jobs:
         run: ${{ matrix.installFfmpeg }}
 
       - name: Build single executable
+        if: matrix.packageMode == 'sea'
         env:
           TARGET_PLATFORM: ${{ matrix.targetPlatform }}
           TARGET_ARCH: ${{ matrix.targetArch }}
           BUNDLE_FFPROBE: ${{ matrix.bundleFfprobe }}
           ALLOW_MISSING_FFPROBE: ${{ matrix.allowMissingFfprobe }}
         run: npm run package:sea
+
+      - name: Build Node bundle
+        if: matrix.packageMode == 'node-bundle'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          npm prune --omit=dev
+          target="release/${{ matrix.target }}"
+          mkdir -p "$target"
+          cp -R dist node_modules "$target/"
+          cp package.json package-lock.json "$target/"
+          cat > "$target/${{ matrix.executable }}" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec node "$ROOT/dist/iptv-picker-cli.js" "$@"
+          SH
+          chmod +x "$target/${{ matrix.executable }}"
 
       - name: Pack Windows release
         if: runner.os == 'Windows'
@@ -131,7 +169,7 @@ jobs:
           archive="${{ matrix.archive }}"
           stage="release/stage/iptv-picker-$target"
           mkdir -p "$stage/data" "$stage/res" "$stage/publish"
-          cp "release/$target/${{ matrix.executable }}" "$stage/${{ matrix.executable }}"
+          cp -R "release/$target/." "$stage/"
           chmod +x "$stage/${{ matrix.executable }}"
           cp README.md "$stage/README.md"
           cp -R config "$stage/config"
