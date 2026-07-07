@@ -31,6 +31,7 @@ export interface IptvPickerCoreRuntimeOptions {
   checkTimeoutMs?: number;
   checkRetry?: number;
   checkMode?: IptvPickerCoreCheckMode;
+  requireFfmpeg?: boolean;
   preflight?: boolean;
   preflightTimeoutMs?: number;
   hostTimeoutLimit?: number;
@@ -69,10 +70,20 @@ type NormalizedIptvPickerCoreRuntimeOptions = Omit<Required<IptvPickerCoreRuntim
   preflightCheckpointPath?: string;
   resumePreflightPath?: string;
   preflightHostState: Map<string, { timeoutCount: number; blocked: boolean }>;
+  ffprobeAvailable: boolean;
+  noFfmpegMode: boolean;
 };
 
 export interface IptvPickerCoreFileResult {
   generatedAt: string;
+  runtime?: {
+    nodeSupported: boolean;
+    ffprobeAvailable: boolean;
+    noFfmpegMode: boolean;
+    requireFfmpeg: boolean;
+    checkMode: IptvPickerCoreCheckMode;
+    playbackValidation: 'ffmpeg' | 'no-ffmpeg';
+  };
   status: Omit<IptvPickerCoreStatus, 'enabled' | 'ffprobeAvailable' | 'nodeSupported'>;
   report: IptvPickerCoreReport;
   entries: IptvPickerCoreChannelEntry[];
@@ -163,6 +174,10 @@ export interface IptvPickerCoreFileResult {
       checkTimeoutMs: number;
       checkRetry: number;
       checkMode: IptvPickerCoreCheckMode;
+      requireFfmpeg?: boolean;
+      ffprobeAvailable?: boolean;
+      noFfmpegMode?: boolean;
+      playbackValidation?: 'ffmpeg' | 'no-ffmpeg';
       preflight: boolean;
       preflightTimeoutMs: number;
       hostTimeoutLimit: number;
@@ -374,7 +389,7 @@ export async function getIptvPickerCoreRuntime(): Promise<{
   const supported = nodeSupported();
   const ffprobeAvailable = await commandExists('ffprobe');
   return {
-    enabled: supported && ffprobeAvailable,
+    enabled: supported,
     ffprobeAvailable,
     nodeSupported: supported,
   };
@@ -749,6 +764,7 @@ function normalizeRuntimeOptions(options: IptvPickerCoreRuntimeOptions = {}): No
       ? options.checkRetry
       : DEFAULT_CHECK_RETRY,
     checkMode: options.checkMode ?? DEFAULT_CHECK_MODE,
+    requireFfmpeg: options.requireFfmpeg ?? false,
     preflight: options.preflight ?? DEFAULT_PREFLIGHT,
     preflightTimeoutMs: positiveIntegerOrDefault(options.preflightTimeoutMs, DEFAULT_PREFLIGHT_TIMEOUT_MS),
     hostTimeoutLimit: positiveIntegerOrDefault(options.hostTimeoutLimit, DEFAULT_HOST_TIMEOUT_LIMIT),
@@ -763,6 +779,8 @@ function normalizeRuntimeOptions(options: IptvPickerCoreRuntimeOptions = {}): No
     preCheckCuration: options.preCheckCuration,
     onDetailLog: options.onDetailLog,
     preflightHostState: new Map(),
+    ffprobeAvailable: true,
+    noFfmpegMode: false,
   };
 }
 
@@ -1331,6 +1349,7 @@ function normalizeCheckedItem(
     checkedAt: new Date().toISOString(),
     errorCode: status.ok ? undefined : status.code,
     errorMessage: status.ok ? undefined : status.message || status.code,
+    probeMode: engine === 'no-ffmpeg' ? 'no-ffmpeg' : 'ffmpeg',
     resolution: width && height ? `${width}x${height}` : null,
     codec: typeof stream?.codec_name === 'string' ? stream.codec_name : null,
     bitrate: numberOrNull(stream?.bit_rate) ?? numberOrNull(format.bit_rate),
@@ -1341,6 +1360,38 @@ function normalizeCheckedItem(
     channel: item.name || undefined,
     group: item.group?.title || undefined,
   };
+}
+
+function buildNoFfmpegEntry(
+  item: ParsedPlaylistItem,
+  source: IptvPickerCoreInputSource,
+): IptvPickerCoreChannelEntry {
+  return {
+    bareUrl: splitUrlInfo(item.url),
+    ok: true,
+    engine: 'no-ffmpeg',
+    checkedAt: new Date().toISOString(),
+    probeMode: 'no-ffmpeg',
+    probeWarning: 'no-ffmpeg: ffprobe not found, playback quality was not verified.',
+    resolution: null,
+    codec: null,
+    bitrate: null,
+    fps: null,
+    formatName: null,
+    sourceUrl: source.url,
+    sourceName: source.name,
+    channel: item.name || undefined,
+    group: item.group || undefined,
+  };
+}
+
+function buildNoFfmpegEntries(
+  items: ParsedPlaylistItem[],
+  source: IptvPickerCoreInputSource,
+): IptvPickerCoreChannelEntry[] {
+  return items
+    .filter((item) => typeof item.url === 'string' && item.url.trim())
+    .map((item) => buildNoFfmpegEntry(item, source));
 }
 
 function emitUrlCheckStart(
@@ -1372,6 +1423,8 @@ function emitUrlCheckResult(
     fps: entry.fps,
     codec: entry.codec,
     format: entry.formatName,
+    probeMode: entry.probeMode,
+    warning: entry.probeWarning,
     errorCode: entry.errorCode,
     message: entry.errorMessage,
     durationMs,
@@ -1414,6 +1467,7 @@ function isPlaybackCheckEntry(entry: IptvPickerCoreChannelEntry): boolean {
 
 export function buildIptvPickerCoreReportFromEntries(entries: IptvPickerCoreChannelEntry[]): IptvPickerCoreReport {
   const bySource = new Map<string, IptvPickerCoreChannelEntry[]>();
+  const noFfmpegEntries = entries.filter((entry) => entry.probeMode === 'no-ffmpeg' || entry.engine === 'no-ffmpeg').length;
   for (const entry of entries) {
     const key = entry.sourceUrl || entry.sourceName || 'unknown';
     const list = bySource.get(key) || [];
@@ -1437,6 +1491,8 @@ export function buildIptvPickerCoreReportFromEntries(entries: IptvPickerCoreChan
 
   return {
     generatedAt: new Date().toISOString(),
+    probeMode: noFfmpegEntries > 0 ? 'no-ffmpeg' : 'ffmpeg',
+    noFfmpegEntries,
     totalSources: sources.length,
     totalUrls: entries.length,
     okUrls: entries.filter((entry) => entry.ok).length,
@@ -1654,14 +1710,19 @@ async function checkSourceToEntries(
   const checkStart = Date.now();
   try {
     if (parsedItems.length > 0) {
-      const engine: IptvPickerCoreChannelEntry['engine'] = options.checkMode === 'fast' ? 'ffprobe-fast' : 'iptv-checker';
-      const checkedItems = options.checkMode === 'fast'
-        ? await checkPlaylistFast(parsedItems, options, source)
-        : await checkPlaylistFull(parsedItems, options, source);
-      const checkedEntries = checkedItems
-        .filter((item) => typeof item.url === 'string' && item.url.trim())
-        .map((item) => normalizeCheckedItem(item, source, engine));
-      entries.push(...checkedEntries);
+      if (options.noFfmpegMode) {
+        const checkedEntries = buildNoFfmpegEntries(parsedItems, source);
+        for (const entry of checkedEntries) emitUrlCheckResult(options, entry, 'skipped');
+        entries.push(...checkedEntries);
+      } else {
+        const engine: IptvPickerCoreChannelEntry['engine'] = options.checkMode === 'fast' ? 'ffprobe-fast' : 'iptv-checker';
+        const checkedItems = options.checkMode === 'fast'
+          ? await checkPlaylistFast(parsedItems, options, source)
+          : await checkPlaylistFull(parsedItems, options, source);
+        entries.push(...checkedItems
+          .filter((item) => typeof item.url === 'string' && item.url.trim())
+          .map((item) => normalizeCheckedItem(item, source, engine)));
+      }
     }
   } catch (error) {
     entries.push({
@@ -1963,13 +2024,19 @@ async function runStageCheck(
   await mapLimit(items.filter((item) => item.preflightItems.length > 0), options.sourceParallel, async (item) => {
     const checkStart = Date.now();
     try {
-      const engine: IptvPickerCoreChannelEntry['engine'] = options.checkMode === 'fast' ? 'ffprobe-fast' : 'iptv-checker';
-      const checkedItems = options.checkMode === 'fast'
-        ? await checkPlaylistFast(item.preflightItems, options, item.source)
-        : await checkPlaylistFull(item.preflightItems, options, item.source);
-      item.entries.push(...checkedItems
-        .filter((checked) => typeof checked.url === 'string' && checked.url.trim())
-        .map((checked) => normalizeCheckedItem(checked, item.source, engine)));
+      if (options.noFfmpegMode) {
+        const checkedEntries = buildNoFfmpegEntries(item.preflightItems, item.source);
+        for (const entry of checkedEntries) emitUrlCheckResult(options, entry, 'skipped');
+        item.entries.push(...checkedEntries);
+      } else {
+        const engine: IptvPickerCoreChannelEntry['engine'] = options.checkMode === 'fast' ? 'ffprobe-fast' : 'iptv-checker';
+        const checkedItems = options.checkMode === 'fast'
+          ? await checkPlaylistFast(item.preflightItems, options, item.source)
+          : await checkPlaylistFull(item.preflightItems, options, item.source);
+        item.entries.push(...checkedItems
+          .filter((checked) => typeof checked.url === 'string' && checked.url.trim())
+          .map((checked) => normalizeCheckedItem(checked, item.source, engine)));
+      }
     } catch (error) {
       item.entries.push({
         bareUrl: item.source.url,
@@ -2009,12 +2076,21 @@ function buildResultFromStageItems(
   status: IptvPickerCoreFileResult['status'],
   startedAt: string,
   startMs: number,
+  options: NormalizedIptvPickerCoreRuntimeOptions,
 ): IptvPickerCoreFileResult {
   const finishedAt = new Date().toISOString();
   const entries = items.flatMap((item) => item.entries);
   const sourceTimings = items.map(sourceTimingFromWorkItem);
   return {
     generatedAt: new Date().toISOString(),
+    runtime: {
+      nodeSupported: true,
+      ffprobeAvailable: options.ffprobeAvailable,
+      noFfmpegMode: options.noFfmpegMode,
+      requireFfmpeg: options.requireFfmpeg,
+      checkMode: options.checkMode,
+      playbackValidation: options.noFfmpegMode ? 'no-ffmpeg' : 'ffmpeg',
+    },
     status: {
       ...status,
       state: 'done',
@@ -2158,7 +2234,7 @@ async function checkIptvPickerCoreSourcesByStage(
   emitStageLog(options, 'start', 6, '汇总导出', {
     entries: items.flatMap((item) => item.entries).length,
   });
-  const result = buildResultFromStageItems(items, status, startedAt, startMs);
+  const result = buildResultFromStageItems(items, status, startedAt, startMs, options);
   emitStageLog(options, 'done', 6, '汇总导出', {
     entries: result.entries.length,
     ok: result.entries.filter((entry) => entry.ok).length,
@@ -2175,12 +2251,19 @@ export async function checkIptvPickerCoreSources(
 ): Promise<IptvPickerCoreFileResult> {
   const runtimeOptions = normalizeRuntimeOptions(options);
   const runtime = await getIptvPickerCoreRuntime();
-  if (!runtime.enabled) {
-    throw new Error(
-      runtime.nodeSupported
-        ? 'ffprobe not found. Install ffmpeg and ensure ffprobe is in PATH.'
-        : 'Node.js >= 22.12.0 is required by iptv-checker.',
-    );
+  runtimeOptions.ffprobeAvailable = runtime.ffprobeAvailable;
+  runtimeOptions.noFfmpegMode = !runtime.ffprobeAvailable;
+  if (!runtime.nodeSupported) {
+    throw new Error('Node.js >= 22.12.0 is required by iptv-checker.');
+  }
+  if (runtimeOptions.requireFfmpeg && !runtime.ffprobeAvailable) {
+    throw new Error('ffprobe not found. Install ffmpeg and ensure ffprobe is in PATH, or run without --require-ffmpeg to use no-ffmpeg mode.');
+  }
+  if (runtimeOptions.noFfmpegMode) {
+    emitDetailLog(runtimeOptions, 'runtime:ffmpeg:missing', {
+      mode: 'no-ffmpeg',
+      message: 'ffprobe not found. Running in no-ffmpeg mode; playback quality is not verified.',
+    });
   }
 
   const startedAt = new Date().toISOString();
@@ -2242,6 +2325,14 @@ export async function checkIptvPickerCoreSources(
   const finishedAt = new Date().toISOString();
   return {
     generatedAt: new Date().toISOString(),
+    runtime: {
+      nodeSupported: runtime.nodeSupported,
+      ffprobeAvailable: runtime.ffprobeAvailable,
+      noFfmpegMode: runtimeOptions.noFfmpegMode,
+      requireFfmpeg: runtimeOptions.requireFfmpeg,
+      checkMode: runtimeOptions.checkMode,
+      playbackValidation: runtimeOptions.noFfmpegMode ? 'no-ffmpeg' : 'ffmpeg',
+    },
     status: {
       ...status,
       state: 'done',

@@ -86,6 +86,7 @@ interface CliArgs {
   checkTimeoutMs: number;
   checkRetry: number;
   checkMode: IptvPickerCoreCheckMode;
+  requireFfmpeg: boolean;
   preflight: boolean;
   preflightTimeoutMs: number;
   hostTimeoutLimit: number;
@@ -102,6 +103,7 @@ interface CliArgs {
     checkTimeoutMs?: boolean;
     checkRetry?: boolean;
     checkMode?: boolean;
+    requireFfmpeg?: boolean;
     preflight?: boolean;
     preflightTimeoutMs?: boolean;
     hostTimeoutLimit?: boolean;
@@ -1291,6 +1293,7 @@ function usage(): string {
     `  --check-timeout-ms <n>       per playback URL check timeout, default: ${DEFAULT_CHECK_TIMEOUT_MS}`,
     `  --check-retry <n>            per playback URL retry count, default: ${DEFAULT_CHECK_RETRY}`,
     `  --check-mode <mode>          full|fast, default: ${DEFAULT_CHECK_MODE}`,
+    `  --require-ffmpeg             fail when ffprobe is missing instead of falling back to no-ffmpeg mode`,
     `  --preflight                  enable HTTP header preflight before playback checks`,
     `  --no-preflight               disable HTTP header preflight`,
     `  --preflight-timeout-ms <n>   HTTP header preflight timeout, default: ${DEFAULT_PREFLIGHT_TIMEOUT_MS}`,
@@ -1397,6 +1400,7 @@ function parseArgs(argv: string[]): CliArgs {
     checkTimeoutMs: DEFAULT_CHECK_TIMEOUT_MS,
     checkRetry: DEFAULT_CHECK_RETRY,
     checkMode: DEFAULT_CHECK_MODE,
+    requireFfmpeg: false,
     preflight: DEFAULT_PREFLIGHT,
     preflightTimeoutMs: DEFAULT_PREFLIGHT_TIMEOUT_MS,
     hostTimeoutLimit: DEFAULT_HOST_TIMEOUT_LIMIT,
@@ -1472,6 +1476,9 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (item === '--check-mode') {
       args.checkMode = parseCheckMode(argv[++i]);
       args.runtimeCliOverrides = { ...args.runtimeCliOverrides, checkMode: true };
+    } else if (item === '--require-ffmpeg') {
+      args.requireFfmpeg = true;
+      args.runtimeCliOverrides = { ...args.runtimeCliOverrides, requireFfmpeg: true };
     } else if (item === '--preflight') {
       args.preflight = true;
       args.runtimeCliOverrides = { ...args.runtimeCliOverrides, preflight: true };
@@ -1817,7 +1824,7 @@ async function promptCliArgs(
   console.log('  report: -');
   console.log(`  markdown: ${next.noMdReports ? '-' : `${next.sourceStatsOut || deriveSourceStatsReportPath(next.out)}, ${next.channelStatsOut || deriveChannelStatsReportPath(next.out)}`}`);
   console.log(`  filters: status=${next.status}, source=${next.source || '-'}, group=${next.group || '-'}, channel=${next.channel || '-'}, errorCode=${next.errorCode || '-'}, minHeight=${next.minHeight ?? '-'}`);
-  console.log(`  runtime: pipelineMode=${next.pipelineMode}, checkMode=${next.checkMode}, preflight=${next.preflight}, preflightTimeoutMs=${next.preflightTimeoutMs}, hostTimeoutLimit=${next.hostTimeoutLimit}, downloadTimeoutMs=${next.downloadTimeoutMs}, checkTimeoutMs=${next.checkTimeoutMs}, checkRetry=${next.checkRetry}, sourceParallel=${next.sourceParallel}, preflightParallel=${next.preflightParallel}, preflightHostParallel=${next.preflightHostParallel}, checkParallel=${next.checkParallel}, checkHostParallel=${next.checkHostParallel}, preflightOut=${next.preflightOut}, resumePreflight=${next.resumePreflight || '-'}`);
+  console.log(`  runtime: pipelineMode=${next.pipelineMode}, checkMode=${next.checkMode}, requireFfmpeg=${next.requireFfmpeg}, preflight=${next.preflight}, preflightTimeoutMs=${next.preflightTimeoutMs}, hostTimeoutLimit=${next.hostTimeoutLimit}, downloadTimeoutMs=${next.downloadTimeoutMs}, checkTimeoutMs=${next.checkTimeoutMs}, checkRetry=${next.checkRetry}, sourceParallel=${next.sourceParallel}, preflightParallel=${next.preflightParallel}, preflightHostParallel=${next.preflightHostParallel}, checkParallel=${next.checkParallel}, checkHostParallel=${next.checkHostParallel}, preflightOut=${next.preflightOut}, resumePreflight=${next.resumePreflight || '-'}`);
   console.log(`  entry sort: ${next.sort} ${next.sort === 'default' ? '(fixed)' : next.sortDir}`);
   console.log(`  report sort: ${next.reportSort} ${next.reportSort === 'default' ? '(fixed)' : next.reportSortDir}`);
   console.log('');
@@ -2213,8 +2220,17 @@ function escapeM3uAttribute(value: string): string {
   return value.replace(/"/g, '&quot;');
 }
 
-function exportEntriesToM3u(entries: IptvPickerCoreChannelEntry[]): string {
+function resultNoFfmpegMode(result: IptvPickerCoreFileResult): boolean {
+  return result.runtime?.noFfmpegMode === true || result.entries.some((entry) => entry.engine === 'no-ffmpeg' || entry.probeMode === 'no-ffmpeg');
+}
+
+function noFfmpegNotice(): string {
+  return 'no-ffmpeg: ffprobe not found, playback quality was not verified.';
+}
+
+function exportEntriesToM3u(entries: IptvPickerCoreChannelEntry[], noFfmpegMode = false): string {
   const lines = ['#EXTM3U'];
+  if (noFfmpegMode) lines.push(`# ${noFfmpegNotice()}`);
   for (const entry of entries) {
     const channel = sanitizeLiveText(entry.channel, '未命名');
     const group = sanitizeLiveText(entry.group || entry.sourceName, '其他');
@@ -2224,7 +2240,7 @@ function exportEntriesToM3u(entries: IptvPickerCoreChannelEntry[]): string {
   return `${lines.join('\n')}\n`;
 }
 
-function exportEntriesToTxt(entries: IptvPickerCoreChannelEntry[]): string {
+function exportEntriesToTxt(entries: IptvPickerCoreChannelEntry[], noFfmpegMode = false): string {
   const groups = new Map<string, IptvPickerCoreChannelEntry[]>();
   for (const entry of entries) {
     const group = sanitizeLiveText(entry.group || entry.sourceName, '其他');
@@ -2234,6 +2250,7 @@ function exportEntriesToTxt(entries: IptvPickerCoreChannelEntry[]): string {
   }
 
   const lines: string[] = [];
+  if (noFfmpegMode) lines.push(`# ${noFfmpegNotice()}`);
   for (const [group, list] of groups) {
     lines.push(`${group},#genre#`);
     for (const entry of list) {
@@ -2243,14 +2260,20 @@ function exportEntriesToTxt(entries: IptvPickerCoreChannelEntry[]): string {
   return `${lines.join('\n')}\n`;
 }
 
-function exportEntriesToJson(entries: IptvPickerCoreChannelEntry[]): string {
+function exportEntriesToJson(entries: IptvPickerCoreChannelEntry[], noFfmpegMode = false): string {
   return `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     format: 'iptv-json',
+    probeMode: noFfmpegMode ? 'no-ffmpeg' : 'ffmpeg',
+    noFfmpegMode,
+    probeWarning: noFfmpegMode ? noFfmpegNotice() : undefined,
     entries: entries.map((entry) => ({
       group: sanitizeLiveText(entry.group || entry.sourceName, '其他'),
       channel: sanitizeLiveText(entry.channel, '未命名'),
       url: entry.bareUrl,
+      engine: entry.engine,
+      probeMode: entry.probeMode || (entry.engine === 'no-ffmpeg' ? 'no-ffmpeg' : 'ffmpeg'),
+      probeWarning: entry.probeWarning,
       sourceName: entry.sourceName,
       sourceUrl: entry.sourceUrl,
       resolution: entry.resolution,
@@ -2268,11 +2291,12 @@ function buildLiveExport(result: IptvPickerCoreFileResult, args: CliArgs): {
 } {
   const format = inferLiveExportFormat(args.exportLive, args.exportFormat);
   const entries = result.entries.filter((entry) => args.exportAll || entry.ok);
+  const noFfmpegMode = resultNoFfmpegMode(result);
   const content = format === 'txt'
-    ? exportEntriesToTxt(entries)
+    ? exportEntriesToTxt(entries, noFfmpegMode)
     : format === 'json'
-      ? exportEntriesToJson(entries)
-      : exportEntriesToM3u(entries);
+      ? exportEntriesToJson(entries, noFfmpegMode)
+      : exportEntriesToM3u(entries, noFfmpegMode);
   return { format, entries, content };
 }
 
@@ -2982,6 +3006,10 @@ function applyOutputOptions(
         checkTimeoutMs: args.checkTimeoutMs,
         checkRetry: args.checkRetry,
         checkMode: args.checkMode,
+        requireFfmpeg: args.requireFfmpeg,
+        ffprobeAvailable: result.runtime?.ffprobeAvailable,
+        noFfmpegMode: result.runtime?.noFfmpegMode,
+        playbackValidation: result.runtime?.playbackValidation,
         preflight: args.preflight,
         preflightTimeoutMs: args.preflightTimeoutMs,
         hostTimeoutLimit: args.hostTimeoutLimit,
@@ -3134,6 +3162,7 @@ function detailLogType(type: string): string {
     'url:check:ok': 'URL检测成功',
     'url:check:failed': 'URL检测失败',
     'url:preflight:failed': 'URL预检失败',
+    'runtime:ffmpeg:missing': '运行环境提示',
     'source:done': '直播源完成',
     'stage:start': '阶段开始',
     'stage:done': '阶段完成',
@@ -3159,6 +3188,7 @@ function detailLogKey(type: string, key: string): string {
     checkFailed: '播放检测失败URL数',
     preflightFailed: '预检失败URL数',
     pipelineMode: '流水线',
+    mode: '模式',
     status: '状态',
     result: '结果',
     reason: '原因',
@@ -3219,6 +3249,8 @@ function detailLogKey(type: string, key: string): string {
     rawUrlCount: '原始URL数',
     matchedUrls: '命中URL数',
     host: 'Host',
+    probeMode: '探测模式',
+    warning: '提示',
   };
   if (labels[key]) return labels[key];
   return key;
@@ -3255,6 +3287,7 @@ function writeConsoleDetailLog(event: IptvPickerCoreDetailLogEvent, line: string
   if (!currentCliArgs || currentCliArgs.quiet) return;
   if (
     event.type.startsWith('stage:') ||
+    event.type === 'runtime:ffmpeg:missing' ||
     event.type === 'source:start' ||
     event.type === 'source:download:failed' ||
     event.type === 'source:preflight:done' ||
@@ -3284,7 +3317,7 @@ function buildTextReport(
   lines.push('外部 IPTV 质量检测报告');
   lines.push('======================');
   lines.push(`生成时间   : ${new Date().toISOString()}`);
-  lines.push(`检测引擎   : iptv-checker + ffprobe`);
+  lines.push(`检测引擎   : ${resultNoFfmpegMode(rawResult) ? 'no-ffmpeg（未进行 ffprobe 播放质量探测）' : 'iptv-checker + ffprobe'}`);
   lines.push(`输入模式   : ${pipeline?.inputMode === 'input' ? '批量文件' : '单个 URL'}`);
   if (pipeline?.inputFile) lines.push(`输入文件   : ${pipeline.inputFile}`);
   lines.push(`JSON 输出  : ${resolve(args.out)}`);
@@ -3298,7 +3331,7 @@ function buildTextReport(
   lines.push(`状态=${args.status}, 来源=${args.source || '-'}, 分组=${args.group || '-'}, 频道=${args.channel || '-'}, 错误码=${args.errorCode || '-'}, 最低高度=${args.minHeight ?? '-'}`);
   lines.push(`明细排序=${args.sort}, 明细排序方向=${args.sortDir}, 源级排序=${args.reportSort}, 源级排序方向=${args.reportSortDir}`);
   lines.push(`频道收口=规则 ${args.curationPreset}, 每频道保留 ${args.curationKeepPerChannel ?? '-'}, 优选高度 ${args.curationPreferredMinHeight ?? '-'}, 兜底高度 ${args.curationFallbackMinHeight ?? '-'}, 低清兜底 ${args.curationAllowLowResFallback}, 检测前过滤 ${args.curationPreFilter}, 保留未匹配 ${args.curationIncludeUnmatched}, 包含失败 ${args.curationIncludeFailed}`);
-  lines.push(`运行参数=流水线 ${args.pipelineMode}, 检测模式 ${args.checkMode}, HTTP预检 ${args.preflight}, 预检超时 ${args.preflightTimeoutMs}ms, Host超时阈值 ${args.hostTimeoutLimit}, 源下载超时 ${args.downloadTimeoutMs}ms, URL检测超时 ${args.checkTimeoutMs}ms, URL重试 ${args.checkRetry}, 直播源并发 ${args.sourceParallel}, 预检并发 ${args.preflightParallel}, 同Host预检并发 ${args.preflightHostParallel}, URL检测并发 ${args.checkParallel}, 同Host检测并发 ${args.checkHostParallel}, 预检检查点 ${args.preflightOut}, 恢复预检 ${args.resumePreflight || '-'}`);
+  lines.push(`运行参数=流水线 ${args.pipelineMode}, 检测模式 ${args.checkMode}, 强制ffmpeg ${args.requireFfmpeg}, HTTP预检 ${args.preflight}, 预检超时 ${args.preflightTimeoutMs}ms, Host超时阈值 ${args.hostTimeoutLimit}, 源下载超时 ${args.downloadTimeoutMs}ms, URL检测超时 ${args.checkTimeoutMs}ms, URL重试 ${args.checkRetry}, 直播源并发 ${args.sourceParallel}, 预检并发 ${args.preflightParallel}, 同Host预检并发 ${args.preflightHostParallel}, URL检测并发 ${args.checkParallel}, 同Host检测并发 ${args.checkHostParallel}, 预检检查点 ${args.preflightOut}, 恢复预检 ${args.resumePreflight || '-'}`);
   lines.push(`紧凑 JSON=${args.compact}, 静默模式=${args.quiet}`);
   lines.push('');
 
@@ -3454,6 +3487,7 @@ function sourceQualityGrade(okUrls: number, urls: number, formatErrors: number, 
 }
 
 function sourceAdvice(grade: string, okUrls: number, urls: number, matchedUrls: number | undefined): string {
+  if (grade === '未探测') return '安装 ffmpeg 后复测';
   if (grade === '优秀') return '保留';
   if (grade === '可用') return '保留';
   if (grade === '观察') return matchedUrls && matchedUrls > 0 ? '观察，模板有覆盖' : '观察';
@@ -3480,6 +3514,7 @@ function buildSourceStatsMarkdown(
   args: CliArgs,
 ): string {
   const curationPreset = args.curationPreset || 'none';
+  const noFfmpegMode = resultNoFfmpegMode(rawResult);
   const timingSources = rawResult.timing?.sources || [];
   const summaryBySource = new Map(rawResult.report.sources.map((source) => [source.sourceUrl, source]));
   const rows = (timingSources.length
@@ -3559,6 +3594,8 @@ function buildSourceStatsMarkdown(
   lines.push(`输入文件：${md(outputResult.pipeline?.inputFile || '-')}`);
   lines.push(`策略：${md(args.strategy || '-')}`);
   lines.push(`模板：${curationPreset === 'none' ? '未启用' : curationPreset}`);
+  lines.push(`探测模式：${noFfmpegMode ? 'no-ffmpeg（未进行 ffprobe 播放质量探测）' : 'ffmpeg'}`);
+  if (noFfmpegMode) lines.push(`提示：${noFfmpegNotice()}`);
   lines.push('');
   lines.push('## 每个直播源');
   lines.push('');
@@ -3566,7 +3603,7 @@ function buildSourceStatsMarkdown(
   lines.push('| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |');
   for (const row of rows) {
     const qualityDenominator = row.matchedUrls ?? row.rawUrls;
-    const grade = sourceQualityGrade(row.okUrls, qualityDenominator, row.formatErrors, row.downloadFailed);
+    const grade = noFfmpegMode ? '未探测' : sourceQualityGrade(row.okUrls, qualityDenominator, row.formatErrors, row.downloadFailed);
     const advice = sourceAdvice(grade, row.okUrls, qualityDenominator, row.matchedUrls);
     lines.push(`| ${md(row.sourceName)} | ${md(grade)} | ${md(advice)} | ${formatRate(pct(row.okUrls, qualityDenominator))} | ${row.rawGroups} | ${row.rawChannels} | ${row.rawUrls} | ${row.matchedChannels ?? '-'} | ${row.matchedUrls ?? '-'} | ${row.templateDroppedUrls ?? '-'} | ${row.preflightPassedUrls} | ${row.preflightFailedUrls} | ${row.checkUrls} | ${row.okChannels} | ${row.okUrls} | ${md(row.topErrors)} | ${row.formatErrors} | ${md(row.sourceUrl)} |`);
   }
@@ -3600,6 +3637,7 @@ function buildOutputChannelStatsMarkdown(
   outputResult: IptvPickerCoreFileResult,
   args: CliArgs,
 ): string {
+  const noFfmpegMode = resultNoFfmpegMode(outputResult);
   const entriesByKey = new Map<string, IptvPickerCoreChannelEntry[]>();
   for (const entry of outputResult.entries) {
     const key = entryChannelKey(entry);
@@ -3631,6 +3669,8 @@ function buildOutputChannelStatsMarkdown(
   lines.push(`JSON 输出：${md(resolve(args.out))}`);
   lines.push(`策略：${md(args.strategy || '-')}`);
   lines.push(`频道收口：${md(outputResult.output?.channelCurationPreset || 'none')}`);
+  lines.push(`探测模式：${noFfmpegMode ? 'no-ffmpeg（未进行 ffprobe 播放质量探测）' : 'ffmpeg'}`);
+  if (noFfmpegMode) lines.push(`提示：${noFfmpegNotice()}`);
   lines.push('');
   lines.push('## 概览');
   lines.push('');
@@ -3647,7 +3687,9 @@ function buildOutputChannelStatsMarkdown(
     lines.push(`- 低清兜底 URL 数量：${curation.lowResFallbackKept || 0}`);
   }
   lines.push('');
-  lines.push('说明：连接速度、下载速度当前检测结果未采集，暂以 `-` 表示；分辨率、码率、FPS 来自 ffprobe/iptv-checker 探测结果。质量等级中“高清优选”表示达到优选高度，“清晰兜底”表示达到兜底高度，“低清兜底”表示为保覆盖保留的低清可播线路。');
+  lines.push(noFfmpegMode
+    ? '说明：当前为 `no-ffmpeg` 模式，URL 已解析和收口，但未进行 ffprobe 播放质量探测；分辨率、码率、FPS、编码和格式会为空。'
+    : '说明：连接速度、下载速度当前检测结果未采集，暂以 `-` 表示；分辨率、码率、FPS 来自 ffprobe/iptv-checker 探测结果。质量等级中“高清优选”表示达到优选高度，“清晰兜底”表示达到兜底高度，“低清兜底”表示为保覆盖保留的低清可播线路。');
   lines.push('');
 
   if (curation?.missing.length) {
@@ -3857,7 +3899,7 @@ async function main(): Promise<void> {
   const channelStatsOut = args.noMdReports ? undefined : resolve(args.channelStatsOut || deriveChannelStatsReportPath(args.out));
   const outputPaths = { out, sourceStatsOut, channelStatsOut };
   debugLog(`[output] [out:${out}] [report:${reportOut || '-'}] [sourceStats:${sourceStatsOut || '-'}] [channelStats:${channelStatsOut || '-'}] [live:${args.exportLive || '-'}] [strategy:${args.strategy || '-'}] [curation:${args.curationPreset}] [keep:${args.curationKeepPerChannel ?? '-'}] [preferredHeight:${args.curationPreferredMinHeight ?? '-'}] [fallbackHeight:${args.curationFallbackMinHeight ?? '-'}] [lowResFallback:${args.curationAllowLowResFallback}] [preFilter:${args.curationPreFilter}] [includeUnmatched:${args.curationIncludeUnmatched}] [includeFailed:${args.curationIncludeFailed}]`);
-  debugLog(`[runtime] [pipelineMode:${args.pipelineMode}] [checkMode:${args.checkMode}] [preflight:${args.preflight}] [preflightTimeoutMs:${args.preflightTimeoutMs}] [hostTimeoutLimit:${args.hostTimeoutLimit}] [downloadTimeoutMs:${args.downloadTimeoutMs}] [checkTimeoutMs:${args.checkTimeoutMs}] [checkRetry:${args.checkRetry}] [sourceParallel:${args.sourceParallel}] [preflightParallel:${args.preflightParallel}] [preflightHostParallel:${args.preflightHostParallel}] [checkParallel:${args.checkParallel}] [checkHostParallel:${args.checkHostParallel}] [preflightOut:${args.preflightOut}] [resumePreflight:${args.resumePreflight || '-'}]`);
+  debugLog(`[runtime] [pipelineMode:${args.pipelineMode}] [checkMode:${args.checkMode}] [requireFfmpeg:${args.requireFfmpeg}] [preflight:${args.preflight}] [preflightTimeoutMs:${args.preflightTimeoutMs}] [hostTimeoutLimit:${args.hostTimeoutLimit}] [downloadTimeoutMs:${args.downloadTimeoutMs}] [checkTimeoutMs:${args.checkTimeoutMs}] [checkRetry:${args.checkRetry}] [sourceParallel:${args.sourceParallel}] [preflightParallel:${args.preflightParallel}] [preflightHostParallel:${args.preflightHostParallel}] [checkParallel:${args.checkParallel}] [checkHostParallel:${args.checkHostParallel}] [preflightOut:${args.preflightOut}] [resumePreflight:${args.resumePreflight || '-'}]`);
   if (!args.noProgressOutput) {
     writeRunningPlaceholders(args, outputPaths);
     debugLog(`[progress-output] [json:${deriveRunningPath(out)}] [live:${args.exportLive ? liveExportBasePath(deriveRunningPath(args.exportLive)) + '.{m3u,txt,json}' : '-'}]`);
@@ -3892,6 +3934,7 @@ async function main(): Promise<void> {
     checkTimeoutMs: args.checkTimeoutMs,
     checkRetry: args.checkRetry,
     checkMode: args.checkMode,
+    requireFfmpeg: args.requireFfmpeg,
     preflight: args.preflight,
     preflightTimeoutMs: args.preflightTimeoutMs,
     hostTimeoutLimit: args.hostTimeoutLimit,
@@ -3977,6 +4020,9 @@ async function main(): Promise<void> {
   const publishedArtifacts = shouldPublishOutput(outputResult, args)
     ? publishMatchedOutput(liveExports)
     : [];
+  if (publishedArtifacts.length > 0 && resultNoFfmpegMode(outputResult)) {
+    cliLog(`[publish:warning] [mode:no-ffmpeg] [message:本次发布产物未经 ffprobe 可播检测] [files:${publishedArtifacts.length}]`);
+  }
   const remotePublishConfig = loadRemotePublishConfig(args);
   const remotePublishResults = await publishRemoteArtifacts(publishedArtifacts, remotePublishConfig, (line) => {
     if (!args.quiet) cliLog(line);

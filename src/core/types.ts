@@ -3,10 +3,12 @@ export type ChannelProbeState = 'idle' | 'running' | 'done' | 'error';
 export interface IptvPickerCoreChannelEntry {
   bareUrl: string;
   ok: boolean;
-  engine: 'iptv-checker' | 'ffprobe-fast';
+  engine: 'iptv-checker' | 'ffprobe-fast' | 'no-ffmpeg';
   checkedAt: string;
   errorCode?: string;
   errorMessage?: string;
+  probeMode?: 'ffmpeg' | 'no-ffmpeg';
+  probeWarning?: string;
   resolution?: string | null;
   codec?: string | null;
   bitrate?: number | null;
@@ -35,6 +37,8 @@ export interface IptvPickerCoreSourceSummary {
 
 export interface IptvPickerCoreReport {
   generatedAt: string;
+  probeMode?: 'ffmpeg' | 'no-ffmpeg';
+  noFfmpegEntries?: number;
   totalSources: number;
   totalUrls: number;
   okUrls: number;
