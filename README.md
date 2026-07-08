@@ -70,7 +70,7 @@ release/windows-x64/iptv-picker.exe
 release/windows-x86/iptv-picker.exe
 ```
 
-推送 `*.*.*` 或 `v*.*.*` 标签时，GitHub Actions 会自动生成并上传：
+推送 `*.*.*` / `v*.*.*` 标签，或手动运行 `CLI Release` workflow 并填写版本号时，GitHub Actions 会自动生成并上传：
 
 ```text
 iptv-picker-windows-x64.zip

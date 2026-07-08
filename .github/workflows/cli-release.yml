@@ -2,6 +2,11 @@ name: CLI Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version/tag, for example v2.0.1 or 2.0.1"
+        required: true
+        type: string
   push:
     tags:
       - "*.*.*"
@@ -114,6 +119,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate manual release version
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RELEASE_VERSION" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$'; then
+            echo "Invalid release version: $RELEASE_VERSION"
+            echo "Use a semantic version like v2.0.1 or 2.0.1."
+            exit 1
+          fi
+
       - name: Setup Node.js
         if: matrix.packageMode != 'sea-musl'
         uses: actions/setup-node@v4
@@ -225,15 +243,20 @@ jobs:
             release/${{ matrix.archive }}.sha256
 
       - name: Upload GitHub Release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+          RELEASE_TARGET: ${{ github.sha }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:RELEASE_TAG.Trim()
+          if (-not ($tag -match '^(v)?\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$')) {
+            throw "Invalid release version: $tag"
+          }
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --title $tag --generate-notes
+            gh release create $tag --target $env:RELEASE_TARGET --title $tag --generate-notes
             if ($LASTEXITCODE -ne 0) {
               gh release view $tag
             }
