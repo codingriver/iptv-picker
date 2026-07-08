@@ -20,8 +20,19 @@ function exeName(platform = process.platform) {
   return normalizePlatform(platform) === 'win32' ? 'iptv-picker.exe' : 'iptv-picker';
 }
 
-function targetName(platform = process.platform, arch = process.arch) {
-  return `${platformName(platform)}-${releaseArchName(arch)}`;
+function normalizeLibc(libc) {
+  if (!libc) return '';
+  const normalized = String(libc).trim().toLowerCase();
+  if (!normalized) return '';
+  if (!['glibc', 'musl'].includes(normalized)) {
+    throw new Error(`Unsupported Linux libc target: ${libc}`);
+  }
+  return normalized;
+}
+
+function targetName(platform = process.platform, arch = process.arch, libc = '') {
+  const suffix = normalizePlatform(platform) === 'linux' && normalizeLibc(libc) === 'musl' ? '-musl' : '';
+  return `${platformName(platform)}-${releaseArchName(arch)}${suffix}`;
 }
 
 function normalizePlatform(platform) {
@@ -70,6 +81,16 @@ function capture(command, args) {
 function commandExists(command) {
   const locator = process.platform === 'win32' ? 'where.exe' : 'which';
   return capture(locator, [command]).split(/\r?\n/).some(Boolean);
+}
+
+function currentLinuxLibc() {
+  if (process.platform !== 'linux') return '';
+  const report = typeof process.report?.getReport === 'function' ? process.report.getReport() : undefined;
+  if (report?.header?.glibcVersionRuntime) return 'glibc';
+  const ldd = capture('ldd', ['--version']);
+  if (/musl/i.test(ldd)) return 'musl';
+  if (/glibc|gnu libc/i.test(ldd)) return 'glibc';
+  return '';
 }
 
 function findFfprobe() {
@@ -126,9 +147,17 @@ function maybeSignMacosBinary(file, targetPlatform = process.platform) {
 function main() {
   const platform = normalizePlatform(process.env.TARGET_PLATFORM || process.platform);
   const arch = normalizeArch(process.env.TARGET_ARCH || process.arch);
+  const libc = normalizeLibc(process.env.TARGET_LIBC || '');
   const nodeBinary = resolve(process.env.NODE_SEA_BINARY || process.execPath);
   if (!['win32', 'linux', 'darwin'].includes(platform)) {
     throw new Error(`Unsupported SEA release platform: ${platform}`);
+  }
+  if (libc && platform !== 'linux') {
+    throw new Error(`TARGET_LIBC is only supported for Linux targets. Platform=${platform}.`);
+  }
+  const hostLibc = currentLinuxLibc();
+  if (libc === 'musl' && hostLibc === 'glibc') {
+    throw new Error('TARGET_LIBC=musl must run on a musl-based Linux host, such as Alpine.');
   }
   if (!['x64', 'arm64', 'ia32'].includes(arch)) {
     throw new Error(`Unsupported SEA release arch: ${arch}`);
@@ -146,7 +175,7 @@ function main() {
     throw new Error(`Node SEA binary was not found: ${nodeBinary}`);
   }
 
-  const target = targetName(platform, arch);
+  const target = targetName(platform, arch, libc);
   const releaseDir = join(ROOT, 'release', target);
   const tmpDir = join(ROOT, '.tmp', 'sea', target);
   const seaConfig = join(tmpDir, 'sea-config.json');

@@ -57,6 +57,19 @@ jobs:
             bundleFfprobe: true
             allowMissingFfprobe: false
             installFfmpeg: sudo apt-get update && sudo apt-get install -y ffmpeg
+          - label: Linux x64 musl
+            os: ubuntu-latest
+            target: linux-x64-musl
+            archive: iptv-picker-linux-x64-musl.tar.gz
+            executable: iptv-picker
+            nodeVersion: 24
+            targetPlatform: linux
+            targetArch: x64
+            targetLibc: musl
+            packageMode: sea-musl
+            bundleFfprobe: true
+            allowMissingFfprobe: false
+            installFfmpeg: ""
           - label: Linux x86
             os: ubuntu-latest
             target: linux-x86
@@ -102,6 +115,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: matrix.packageMode != 'sea-musl'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.nodeVersion }}
@@ -109,10 +123,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        if: matrix.packageMode != 'sea-musl'
         run: npm ci
 
       - name: Install FFmpeg
-        if: matrix.installFfmpeg != ''
+        if: matrix.packageMode != 'sea-musl' && matrix.installFfmpeg != ''
         run: ${{ matrix.installFfmpeg }}
 
       - name: Build single executable
@@ -123,6 +138,31 @@ jobs:
           BUNDLE_FFPROBE: ${{ matrix.bundleFfprobe }}
           ALLOW_MISSING_FFPROBE: ${{ matrix.allowMissingFfprobe }}
         run: npm run package:sea
+
+      - name: Build Alpine/musl single executable
+        if: matrix.packageMode == 'sea-musl'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e TARGET_PLATFORM="${{ matrix.targetPlatform }}" \
+            -e TARGET_ARCH="${{ matrix.targetArch }}" \
+            -e TARGET_LIBC="${{ matrix.targetLibc }}" \
+            -e BUNDLE_FFPROBE="${{ matrix.bundleFfprobe }}" \
+            -e ALLOW_MISSING_FFPROBE="${{ matrix.allowMissingFfprobe }}" \
+            -v "$PWD:/work" \
+            -w /work \
+            node:${{ matrix.nodeVersion }}-alpine \
+            sh -lc '
+              set -eu
+              owner="$(stat -c "%u:%g" /work)"
+              cleanup() {
+                chown -R "$owner" /work/node_modules /work/release /work/.tmp /work/src/core/bundled-ffprobe.ts 2>/dev/null || true
+              }
+              trap cleanup EXIT
+              apk add --no-cache bash ffmpeg
+              bash -lc "set -euo pipefail; npm ci; npm run package:sea"
+            '
 
       - name: Build Node bundle
         if: matrix.packageMode == 'node-bundle'

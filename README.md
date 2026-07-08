@@ -76,6 +76,7 @@ release/windows-x86/iptv-picker.exe
 iptv-picker-windows-x64.zip
 iptv-picker-windows-x86.zip
 iptv-picker-linux-x64.tar.gz
+iptv-picker-linux-x64-musl.tar.gz
 iptv-picker-linux-x86.tar.gz
 iptv-picker-macos-x64.tar.gz
 iptv-picker-macos-arm64.tar.gz
@@ -85,7 +86,8 @@ iptv-picker-macos-arm64.tar.gz
 说明：
 
 ```text
-Windows x64 / Linux x64 / macOS x64 / macOS arm64 默认内嵌 ffprobe
+Windows x64 / Linux x64 / Linux x64 musl / macOS x64 / macOS arm64 默认内嵌 ffprobe
+Linux x64 适用于 glibc 发行版，Linux x64 musl 适用于 Alpine
 Windows x86 默认不内嵌 ffprobe，会走外部 ffprobe 或 no-ffmpeg 降级
 Linux x86 由于 Node.js 官方未提供 linux-x86 SEA 运行时，发布为 Node bundle 包，需要系统已安装 Node.js
 macOS 不发布 x86/32 位版本
