@@ -19,6 +19,8 @@ jobs:
   package:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      APP_VERSION: ${{ inputs.version || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +128,7 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if ! printf '%s' "$RELEASE_VERSION" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$'; then
+          if ! printf '%s' "$RELEASE_VERSION" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
             echo "Invalid release version: $RELEASE_VERSION"
             echo "Use a semantic version like v2.0.1 or 2.0.1."
             exit 1
@@ -163,6 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
+            -e APP_VERSION="${{ inputs.version || github.ref_name }}" \
             -e TARGET_PLATFORM="${{ matrix.targetPlatform }}" \
             -e TARGET_ARCH="${{ matrix.targetArch }}" \
             -e TARGET_LIBC="${{ matrix.targetLibc }}" \
@@ -200,6 +203,13 @@ jobs:
           exec node "$ROOT/dist/iptv-picker-cli.js" "$@"
           SH
           chmod +x "$target/${{ matrix.executable }}"
+          version="${APP_VERSION#v}"
+          printf '%s\n' "$version" > "$target/VERSION"
+          actual="$("$target/${{ matrix.executable }}" --version)"
+          if [ "$actual" != "iptv-picker $version" ]; then
+            echo "Packaged version mismatch: expected iptv-picker $version, got $actual"
+            exit 1
+          fi
 
       - name: Pack Windows release
         if: runner.os == 'Windows'
@@ -210,6 +220,7 @@ jobs:
           $stage = "release/stage/iptv-picker-$target"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "release/$target/${{ matrix.executable }}" "$stage/${{ matrix.executable }}"
+          Copy-Item "release/$target/VERSION" "$stage/VERSION"
           Copy-Item "README.md" "$stage/README.md"
           Copy-Item "config" "$stage/config" -Recurse
           New-Item -ItemType Directory -Force -Path "$stage/data","$stage/res","$stage/publish" | Out-Null
@@ -266,7 +277,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(printf '%s' "$RELEASE_TAG" | xargs)"
-          if ! printf '%s' "$tag" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$'; then
+          if ! printf '%s' "$tag" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
             echo "Invalid release version: $tag"
             exit 1
           fi

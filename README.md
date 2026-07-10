@@ -93,6 +93,72 @@ https://github.com/codingriver/iptv-picker/releases/latest/download/latest.json
 
 `latest.json` 包含版本号、Release 地址、发布说明、聚合校验文件地址，以及各平台压缩包的下载地址、字节数和 SHA-256。`assets` 只收录 `.zip` 和 `.tar.gz` 软件包，不包含校验文件本身。
 
+Action 会把 Release Tag 注入构建产物。标签 `v0.2.0` 和 `0.2.0` 都会在程序内记录为 `0.2.0`，可以通过以下命令读取：
+
+```bash
+./iptv-picker --version
+```
+
+每个压缩包根目录也包含同版本的 `VERSION` 文件，Action 会在上传前校验可执行文件输出与 Release 版本一致。
+
+### Linux/macOS 自动安装与更新
+
+自动更新脚本使用上述 `latest.json`，自动识别 Linux glibc、Linux musl、Linux x86、macOS x64 和 macOS arm64，并在下载后校验文件大小与 SHA-256。系统需要 `curl`、`tar`、`awk`，以及 `jq`、`python3`、`node` 中任意一种 JSON 解析器。
+
+`autoupdate.sh` 只在仓库中维护，不会打进平台压缩包，也不会作为 Release 资产上传。固定源码地址：
+
+```text
+https://raw.githubusercontent.com/codingriver/iptv-picker/main/autoupdate.sh
+```
+
+首次安装到默认目录 `~/.local/share/iptv-picker`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/codingriver/iptv-picker/main/autoupdate.sh \
+  -o /tmp/iptv-picker-autoupdate.sh
+sh /tmp/iptv-picker-autoupdate.sh
+```
+
+指定本地保存路径，并把更新脚本保存在固定位置：
+
+```bash
+mkdir -p "$HOME/apps/iptv-picker"
+curl -fsSL https://raw.githubusercontent.com/codingriver/iptv-picker/main/autoupdate.sh \
+  -o "$HOME/apps/iptv-picker/autoupdate.sh"
+chmod +x "$HOME/apps/iptv-picker/autoupdate.sh"
+"$HOME/apps/iptv-picker/autoupdate.sh" "$HOME/apps/iptv-picker"
+```
+
+之后可以重复使用同一份仓库脚本检查更新：
+
+```bash
+"$HOME/apps/iptv-picker/autoupdate.sh" "$HOME/apps/iptv-picker"
+"$HOME/apps/iptv-picker/iptv-picker" --version
+```
+
+强制重新安装当前版本或允许降级：
+
+```bash
+"$HOME/apps/iptv-picker/autoupdate.sh" --force "$HOME/apps/iptv-picker"
+```
+
+安装目录结构：
+
+```text
+iptv-picker/
+  iptv-picker               固定启动器
+  autoupdate.sh             可选，由用户从仓库 Raw 地址保存
+  .iptv-picker-version      当前版本
+  .current-release          当前版本目录指针
+  releases/                 已安装的版本目录
+  config/                   用户配置，升级时不会覆盖已有文件
+  data/
+  res/
+  publish/
+```
+
+更新过程先下载到安装目录内的临时目录，完成大小、SHA-256、压缩包路径和包内版本校验后，才原子切换 `.current-release`。校验或下载失败时继续保留当前版本；本地版本高于远端版本时默认不降级。
+
 说明：
 
 ```text

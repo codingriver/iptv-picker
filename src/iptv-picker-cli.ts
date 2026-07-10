@@ -32,6 +32,7 @@ import type {
   IptvPickerCoreReport,
   IptvPickerCoreSourceSummary,
 } from './core/types';
+import { APP_VERSION } from './version';
 
 interface InquirerPrompts {
   input(options: {
@@ -159,6 +160,7 @@ interface CliArgs {
   initDefaultChannelTargets?: boolean;
   initDefaultChannelAliases?: boolean;
   listStrategies?: boolean;
+  version?: boolean;
   help?: boolean;
   interactive?: boolean;
 }
@@ -1266,6 +1268,7 @@ function usage(): string {
     '  node dist/iptv-picker-cli.js --url <m3u-or-txt-url> [--name <name>] --out <file>',
     '  node dist/iptv-picker-cli.js --input <sources.json> --out <file>',
     '  node dist/iptv-picker-cli.js --interactive',
+    '  node dist/iptv-picker-cli.js --version',
     '  node dist/iptv-picker-cli.js',
     '',
     'Input / output:',
@@ -1281,6 +1284,7 @@ function usage(): string {
     '  --export-format m3u|txt|json live playlist format hint, default: inferred from file extension or m3u',
     '  --export-all                export all filtered entries instead of only ok=true entries',
     '  --init-default-sources      create the default sources file and exit',
+    '  --version, -V               print the application version and exit',
     '  --no-report                 deprecated; text report output has been removed',
     '  --no-md-reports             do not write markdown statistics reports',
     '  --no-progress-output        do not write running partial output files during checks',
@@ -1441,6 +1445,7 @@ function parseArgs(argv: string[]): CliArgs {
     const item = argv[i];
     if (item === 'sync' || item === 'publish-sync') args.publishSyncOnly = true;
     else if (item === '--help' || item === '-h') args.help = true;
+    else if (item === '--version' || item === '-V') args.version = true;
     else if (item === '--init-default-sources') args.initDefaultSources = true;
     else if (item === '--interactive' || item === '-i') args.interactive = true;
     else if (item === '--url') args.url = argv[++i];
@@ -3843,6 +3848,10 @@ function writeRunningPlaceholders(args: CliArgs, paths: {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   let args = parseArgs(argv);
+  if (args.version) {
+    console.log(`iptv-picker ${APP_VERSION}`);
+    return;
+  }
   if (args.help) {
     console.log(usage());
     return;

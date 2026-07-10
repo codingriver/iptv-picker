@@ -3,6 +3,7 @@
 const { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } = require('fs');
 const { join, resolve } = require('path');
 const { spawnSync } = require('child_process');
+const { resolveAppVersion } = require('./release-version');
 
 const ROOT = resolve(__dirname, '..');
 const BUNDLED_MODULE = join(ROOT, 'src', 'core', 'bundled-ffprobe.ts');
@@ -145,6 +146,7 @@ function maybeSignMacosBinary(file, targetPlatform = process.platform) {
 }
 
 function main() {
+  const appVersion = resolveAppVersion();
   const platform = normalizePlatform(process.env.TARGET_PLATFORM || process.platform);
   const arch = normalizeArch(process.env.TARGET_ARCH || process.arch);
   const libc = normalizeLibc(process.env.TARGET_LIBC || '');
@@ -230,7 +232,14 @@ function main() {
     run(postject.command, postjectArgs);
     maybeSignMacosBinary(executable, platform);
 
+    const versionOutput = capture(executable, ['--version']);
+    if (versionOutput !== `iptv-picker ${appVersion}`) {
+      throw new Error(`Packaged version check failed. Expected "iptv-picker ${appVersion}", got "${versionOutput || '(empty)'}".`);
+    }
+    writeFileSync(join(releaseDir, 'VERSION'), `${appVersion}\n`, 'utf8');
+
     console.log(`[package:sea] target ${target}`);
+    console.log(`[package:sea] version ${appVersion}`);
     console.log(`[package:sea] node ${nodeBinary}`);
     console.log(`[package:sea] ffprobe ${ffprobe || 'not bundled'}`);
     console.log(`[package:sea] wrote ${executable}`);
