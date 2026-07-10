@@ -81,7 +81,17 @@ iptv-picker-linux-x86.tar.gz
 iptv-picker-macos-x64.tar.gz
 iptv-picker-macos-arm64.tar.gz
 *.sha256
+SHA256SUMS.txt
+latest.json
 ```
+
+最新稳定版本信息可以通过固定地址获取：
+
+```text
+https://github.com/codingriver/iptv-picker/releases/latest/download/latest.json
+```
+
+`latest.json` 包含版本号、Release 地址、发布说明、聚合校验文件地址，以及各平台压缩包的下载地址、字节数和 SHA-256。`assets` 只收录 `.zip` 和 `.tar.gz` 软件包，不包含校验文件本身。
 
 说明：
 
