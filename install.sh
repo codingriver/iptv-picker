@@ -11,7 +11,7 @@ FORCE=0
 usage() {
   cat <<'EOF'
 Usage:
-  autoupdate.sh [options] [install-directory]
+  install.sh [options] [install-directory]
 
 Options:
   --force                 reinstall even when the local version is current or newer
@@ -26,7 +26,7 @@ EOF
 }
 
 fail() {
-  printf '%s: %s\n' "$PROGRAM_NAME autoupdate" "$*" >&2
+  printf '%s: %s\n' "$PROGRAM_NAME installer" "$*" >&2
   exit 1
 }
 
@@ -256,7 +256,7 @@ ARCHIVE_FILE="$TMP_DIR/$ASSET_NAME"
 UNPACK_DIR="$TMP_DIR/unpack"
 
 printf 'Checking %s\n' "$MANIFEST_URL"
-curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-autoupdate/1' \
+curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-installer/1' \
   "$MANIFEST_URL" -o "$MANIFEST_FILE"
 
 MANIFEST_VALUES="$(read_manifest_asset "$MANIFEST_FILE" "$ASSET_NAME")" || fail "asset not found in latest.json: $ASSET_NAME"
@@ -288,7 +288,7 @@ if [ "$FORCE" -eq 0 ] && [ -n "$LOCAL_VERSION" ]; then
 fi
 
 printf 'Installing %s -> %s (%s)\n' "${LOCAL_VERSION:-not installed}" "$REMOTE_VERSION" "$TARGET"
-curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-autoupdate/1' \
+curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-installer/1' \
   "$ASSET_URL" -o "$ARCHIVE_FILE"
 
 ACTUAL_SIZE="$(wc -c < "$ARCHIVE_FILE" | tr -d ' ')"
