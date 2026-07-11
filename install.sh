@@ -3,6 +3,26 @@ set -eu
 
 PROGRAM_NAME="iptv-picker"
 DEFAULT_MANIFEST_URL="https://github.com/codingriver/iptv-picker/releases/latest/download/latest.json"
+GITHUB_ACCELERATE_MIRRORS='
+https://gh-proxy.303066.xyz
+https://gh-proxy.com
+https://gh-proxy.org
+https://mirror.ghproxy.com
+https://ghfast.top
+https://ghp.ci
+https://gh.kk.cc
+https://gh.aptv.app
+https://gh.927223.xyz
+https://gh.haonice.com
+https://github.akams.cn
+https://ui.ghproxy.cc
+https://gh.ddc.top
+https://gh-proxy.net
+https://hub.gitmirror.com
+https://github.moeyy.xyz
+https://ghfie.geekertao.top
+https://proxy.606055.xyz
+'
 MANIFEST_URL="${IPTV_PICKER_MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
 INSTALL_DIR="${IPTV_PICKER_HOME:-$HOME/.local/share/iptv-picker}"
 TARGET_OVERRIDE=""
@@ -32,6 +52,66 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
+}
+
+is_github_url() {
+  case "$1" in
+    https://github.com/*|https://raw.githubusercontent.com/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_network_curl_error() {
+  case "$1" in
+    5|6|7|28|35|52|56) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+curl_download() {
+  url="$1"
+  output_file="$2"
+  tmp_output="$output_file.tmp.$$"
+  rm -f "$tmp_output"
+  if curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-installer/1' \
+    "$url" -o "$tmp_output"; then
+    mv -f "$tmp_output" "$output_file"
+    return 0
+  else
+    status="$?"
+  fi
+  rm -f "$tmp_output"
+  return "$status"
+}
+
+download_with_github_mirrors() {
+  url="$1"
+  output_file="$2"
+
+  if curl_download "$url" "$output_file"; then
+    return 0
+  else
+    status="$?"
+  fi
+
+  if ! is_network_curl_error "$status" || ! is_github_url "$url"; then
+    return "$status"
+  fi
+
+  for mirror in $GITHUB_ACCELERATE_MIRRORS; do
+    mirror_url="${mirror%/}/$url"
+    printf 'Download failed with network error; trying GitHub mirror: %s\n' "$mirror" >&2
+    if curl_download "$mirror_url" "$output_file"; then
+      return 0
+    else
+      status="$?"
+    fi
+    if ! is_network_curl_error "$status"; then
+      return "$status"
+    fi
+  done
+
+  return "$status"
 }
 
 read_manifest_asset() {
@@ -256,8 +336,8 @@ ARCHIVE_FILE="$TMP_DIR/$ASSET_NAME"
 UNPACK_DIR="$TMP_DIR/unpack"
 
 printf 'Checking %s\n' "$MANIFEST_URL"
-curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-installer/1' \
-  "$MANIFEST_URL" -o "$MANIFEST_FILE"
+download_with_github_mirrors "$MANIFEST_URL" "$MANIFEST_FILE" || \
+  fail "unable to download latest.json: $MANIFEST_URL"
 
 MANIFEST_VALUES="$(read_manifest_asset "$MANIFEST_FILE" "$ASSET_NAME")" || fail "asset not found in latest.json: $ASSET_NAME"
 REMOTE_VERSION="$(normalize_version "$(printf '%s\n' "$MANIFEST_VALUES" | sed -n '1p')")"
@@ -288,8 +368,8 @@ if [ "$FORCE" -eq 0 ] && [ -n "$LOCAL_VERSION" ]; then
 fi
 
 printf 'Installing %s -> %s (%s)\n' "${LOCAL_VERSION:-not installed}" "$REMOTE_VERSION" "$TARGET"
-curl -fsSL --retry 3 --connect-timeout 15 --user-agent 'iptv-picker-installer/1' \
-  "$ASSET_URL" -o "$ARCHIVE_FILE"
+download_with_github_mirrors "$ASSET_URL" "$ARCHIVE_FILE" || \
+  fail "unable to download asset: $ASSET_URL"
 
 ACTUAL_SIZE="$(wc -c < "$ARCHIVE_FILE" | tr -d ' ')"
 [ "$ACTUAL_SIZE" = "$EXPECTED_SIZE" ] || fail "asset size mismatch: expected $EXPECTED_SIZE, got $ACTUAL_SIZE"
